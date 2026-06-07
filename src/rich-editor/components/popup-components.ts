@@ -11,6 +11,7 @@ type TableSizeGridHandlers = {
   onClick: (row: number, col: number) => void;
 };
 
+// 이모지 버튼 목록을 렌더링하고 선택 콜백을 연결한다.
 export function renderEmojiButtons(
   emojiPicker: HTMLDivElement,
   onSelect: (emoji: string) => void,
@@ -27,6 +28,7 @@ export function renderEmojiButtons(
   }
 }
 
+// 텍스트/배경 색상 스와치를 동적으로 생성한다.
 export function renderColorSwatches(root: HTMLElement): void {
   const textGrid = root.querySelector('[data-role="textColorGrid"]') as HTMLDivElement;
   const bgGrid = root.querySelector('[data-role="bgColorGrid"]') as HTMLDivElement;
@@ -65,6 +67,7 @@ export function renderColorSwatches(root: HTMLElement): void {
   }
 }
 
+// 테이블 삽입 크기 선택(최대 10x10) 그리드를 렌더링한다.
 export function renderTableSizeGrid(
   grid: HTMLDivElement,
   handlers: TableSizeGridHandlers,
@@ -100,6 +103,7 @@ export function renderTableSizeGrid(
   }
 }
 
+// 현재 hover된 행/열에 맞춰 안내 텍스트와 그리드 하이라이트를 갱신한다.
 export function updateTableSizeGridPreview(
   tableSizeInfo: HTMLDivElement,
   tableSizePicker: HTMLDivElement,
@@ -118,6 +122,8 @@ export function updateTableSizeGridPreview(
   }
 }
 
+// 기준 anchor 요소 근처에 팝업을 배치한다.
+// 화면 밖으로 벗어나지 않도록 좌표를 보정한다.
 export function positionPopupNearAnchor(
   shell: HTMLElement,
   anchor: HTMLElement,
@@ -147,6 +153,7 @@ export function positionPopupNearAnchor(
   popup.style.top = `${top}px`;
 }
 
+// 마우스 좌표(주로 컨텍스트 메뉴 호출 위치)에 팝업을 배치한다.
 export function positionPopupAtPoint(
   shell: HTMLElement,
   popup: HTMLElement,

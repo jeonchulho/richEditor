@@ -1,3 +1,5 @@
+// 상단 툴바 마크업 템플릿.
+// 그룹 단위로 inline 서식, 리스트, 폰트/색상, 테이블, 삽입, 저장/디버그 기능을 배치한다.
 export const TOOLBAR_TEMPLATE = `
   <header class="re-toolbar">
     <div class="re-group">
@@ -55,9 +57,14 @@ export const TOOLBAR_TEMPLATE = `
         <option value="normal" selected>Flash Normal</option>
         <option value="strong">Flash Strong</option>
       </select>
+      <select data-role="headerPasteMode" title="Header Paste Policy">
+        <option value="preserveTarget" selected>Paste Header: Keep Target</option>
+        <option value="followSource">Paste Header: Follow Source</option>
+      </select>
       <button data-table="insert" title="Insert Table">Table +</button>
-      <button data-table="addRow" title="Add Row">Row +</button>
-      <button data-table="addCol" title="Add Column">Col +</button>
+      <button data-action="insertWeeklyReportTemplate" title="주간 업무보고서 템플릿 삽입">업무보고서</button>
+      <button data-table="addRow" title="Add Row Below">Row +</button>
+      <button data-table="addCol" title="Add Column Right">Col +</button>
       <button data-table="deleteRow" title="Delete Row">Row -</button>
       <button data-table="deleteCol" title="Delete Column">Col -</button>
       <button data-table="mergeCells" title="Merge Selected Cells (Shift+Click)">Merge</button>
