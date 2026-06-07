@@ -203,3 +203,73 @@ describe("RichEditor mention filtering during composition", () => {
     expect(editorInstance.isMentionPopupVisible()).toBe(false);
   });
 });
+
+describe("RichEditor table insertion trailing paragraph", () => {
+  it("keeps an editable paragraph after inserting a table at document end", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTable: (rows: number, cols: number) => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertTable(2, 2);
+
+    const last = editor.lastElementChild as HTMLElement | null;
+    expect(last?.tagName.toLowerCase()).toBe("p");
+    expect((last as HTMLParagraphElement).innerHTML.toLowerCase()).toContain("br");
+  });
+
+  it("does not add a trailing paragraph when a next paragraph already exists", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTrailingParagraphAfterTopLevelAnchor: (anchor: Node) => HTMLParagraphElement | null;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<table><tr><td>a</td></tr></table><p>next</p>";
+
+    const anchor = editor.querySelector("table") as HTMLTableElement;
+    const inserted = editorInstance.insertTrailingParagraphAfterTopLevelAnchor(anchor);
+
+    expect(inserted).toBeNull();
+    const paragraphs = editor.querySelectorAll(":scope > p");
+    expect(paragraphs.length).toBe(1);
+  });
+
+  it("does not add a trailing paragraph when a next table already exists", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTrailingParagraphAfterTopLevelAnchor: (anchor: Node) => HTMLParagraphElement | null;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<table><tr><td>a</td></tr></table><table><tr><td>existing</td></tr></table>";
+
+    const anchor = editor.querySelector("table") as HTMLTableElement;
+    const inserted = editorInstance.insertTrailingParagraphAfterTopLevelAnchor(anchor);
+
+    expect(inserted).toBeNull();
+    const topLevelParagraphs = editor.querySelectorAll(":scope > p");
+    expect(topLevelParagraphs.length).toBe(0);
+  });
+});

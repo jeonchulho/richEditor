@@ -3763,8 +3763,8 @@ export class RichEditor {
       return null;
     }
 
-    if (top.nextElementSibling) {
-      // 뒤에 이미 다른 top-level 블록이 있으면 추가 p를 만들지 않는다.
+    if (top !== this.editor.lastElementChild) {
+      // 마지막 top-level 요소가 아니면 trailing p를 만들지 않는다.
       return null;
     }
 
@@ -3772,7 +3772,6 @@ export class RichEditor {
     // 비어 있는 p는 브라우저/레이아웃에 따라 클릭 타겟이 작아져 캐럿 진입이 어려울 수 있다.
     // 테이블 뒤 기본 입력 줄은 placeholder <br>로 즉시 편집 가능 상태를 보장한다.
     paragraph.innerHTML = "<br>";
-
     top.insertAdjacentElement("afterend", paragraph);
 
     const selection = window.getSelection();
