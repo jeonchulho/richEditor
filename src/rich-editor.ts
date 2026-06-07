@@ -44,6 +44,7 @@ import type {
   InlineCommand,
   LineHeightOption,
   ListCommand,
+  MentionOptions,
   RichEditorOptions,
   TableAction,
   TableMatrix,
@@ -59,6 +60,21 @@ const DELETE_UI_TEXT = {
   tableDeleted: "Table deleted",
 } as const;
 
+const DEFAULT_MENTION_ITEMS = [
+  "김민지",
+  "박준호",
+  "이수현",
+  "최윤아",
+  "정우진",
+  "관리팀",
+  "생산팀",
+  "품질팀",
+  "구매팀",
+  "물류팀",
+] as const;
+const DEFAULT_MENTION_TRIGGER = "@";
+const DEFAULT_MENTION_MAX_RESULTS = 8;
+
 // RichEditor 핵심 클래스.
 // 책임 범위:
 // 1) 렌더링/DOM 참조 연결
@@ -68,7 +84,15 @@ const DELETE_UI_TEXT = {
 // 5) 저장/복구 및 디버그 로그
 export class RichEditor {
   private readonly root: HTMLElement;
-  private readonly options: Required<RichEditorOptions>;
+  private readonly options: {
+    storageKey: string;
+    autosaveEnabled: boolean;
+    autosaveDelay: number;
+    mentionItems: string[];
+    mentionEnabled: boolean;
+    mentionTrigger: string;
+    mentionMaxResults: number;
+  };
   private toolbar!: HTMLDivElement;
   private editor!: HTMLDivElement;
   private colorPalette!: HTMLDivElement;
@@ -80,6 +104,8 @@ export class RichEditor {
   private tableInsertButton!: HTMLButtonElement;
   private tableSizePicker!: HTMLDivElement;
   private tableSizeInfo!: HTMLDivElement;
+  private mentionPopup!: HTMLDivElement;
+  private mentionList!: HTMLDivElement;
   private tableContextMenu!: HTMLDivElement;
   private tablePropsBackdrop!: HTMLDivElement;
   private tablePropsDialog!: HTMLDivElement;
@@ -175,24 +201,97 @@ export class RichEditor {
   private activeImageWrapper: HTMLElement | null = null;
   private activeTableElement: HTMLTableElement | null = null;
   private pendingExpandedMerge = false;
+  private mentionActiveIndex = 0;
+  private mentionQuery = "";
+  private mentionReplaceRange: Range | null = null;
+  private mentionCandidates: string[] = [];
+  private composingText = "";
+  private mentionItems: string[] = [...DEFAULT_MENTION_ITEMS];
+  private mentionEnabled = true;
+  private mentionTrigger = DEFAULT_MENTION_TRIGGER;
+  private mentionMaxResults = DEFAULT_MENTION_MAX_RESULTS;
   private headerPasteMode: HeaderPasteMode = "preserveTarget";
   private readonly uiPrefsKey: string;
 
   constructor(root: HTMLElement, options: RichEditorOptions = {}) {
     this.root = root;
+    const mentionOptions = this.normalizeMentionOptions(options.mentions, options.mentionItems);
     this.options = {
       storageKey: options.storageKey ?? DEFAULT_STORAGE_KEY,
+      autosaveEnabled: options.autosaveEnabled ?? true,
       autosaveDelay: options.autosaveDelay ?? DEFAULT_AUTOSAVE_DELAY,
+      mentionItems: mentionOptions.items,
+      mentionEnabled: mentionOptions.enabled,
+      mentionTrigger: mentionOptions.trigger,
+      mentionMaxResults: mentionOptions.maxResults,
     };
+    this.mentionItems = [...this.options.mentionItems];
+    this.mentionEnabled = this.options.mentionEnabled;
+    this.mentionTrigger = this.options.mentionTrigger;
+    this.mentionMaxResults = this.options.mentionMaxResults;
     this.uiPrefsKey = `${this.options.storageKey}:ui-prefs`;
 
-    this.debouncedSave = this.debounce(() => this.save(), this.options.autosaveDelay);
+    this.debouncedSave = this.options.autosaveEnabled
+      ? this.debounce(() => this.save(), this.options.autosaveDelay)
+      : () => {};
     this.render();
     this.restoreUiPrefs();
     this.bindEvents();
     this.restore();
     this.captureSelection();
     this.updateToolbarState();
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private normalizeMentionItems(items?: string[]): string[] {
+    if (!items || items.length === 0) {
+      return [...DEFAULT_MENTION_ITEMS];
+    }
+
+    const normalized = Array.from(new Set(items.map((item) => item.trim()).filter((item) => item.length > 0)));
+    return normalized.length > 0 ? normalized : [...DEFAULT_MENTION_ITEMS];
+  }
+
+  private normalizeMentionOptions(mentions?: MentionOptions, legacyItems?: string[]): {
+    enabled: boolean;
+    trigger: string;
+    items: string[];
+    maxResults: number;
+  } {
+    const trigger = (mentions?.trigger ?? DEFAULT_MENTION_TRIGGER).trim();
+    const normalizedTrigger = trigger.length > 0 ? trigger : DEFAULT_MENTION_TRIGGER;
+    const maxResults = Number.isFinite(mentions?.maxResults)
+      ? Math.max(1, Math.floor(mentions?.maxResults ?? DEFAULT_MENTION_MAX_RESULTS))
+      : DEFAULT_MENTION_MAX_RESULTS;
+    return {
+      enabled: mentions?.enabled ?? true,
+      trigger: normalizedTrigger,
+      items: this.normalizeMentionItems(mentions?.items ?? legacyItems),
+      maxResults,
+    };
+  }
+
+  public setMentionItems(items: string[]): void {
+    this.mentionItems = this.normalizeMentionItems(items);
+    if (this.isMentionPopupVisible()) {
+      this.updateMentionAutocompleteFromSelection();
+    }
+  }
+
+  public configureMentions(options: MentionOptions): void {
+    const normalized = this.normalizeMentionOptions(options, this.mentionItems);
+    this.mentionEnabled = normalized.enabled;
+    this.mentionTrigger = normalized.trigger;
+    this.mentionItems = normalized.items;
+    this.mentionMaxResults = normalized.maxResults;
+    if (!this.mentionEnabled) {
+      this.hideMentionPopup();
+      return;
+    }
+    this.updateMentionAutocompleteFromSelection();
   }
 
   // 템플릿을 주입하고 주요 UI 노드 참조를 캐시한다.
@@ -210,6 +309,8 @@ export class RichEditor {
     this.tableInsertButton = this.root.querySelector('[data-table="insert"]') as HTMLButtonElement;
     this.tableSizePicker = this.root.querySelector('.re-table-size-picker') as HTMLDivElement;
     this.tableSizeInfo = this.root.querySelector('[data-role="tableSizeInfo"]') as HTMLDivElement;
+    this.mentionPopup = this.root.querySelector('[data-role="mentionPopup"]') as HTMLDivElement;
+    this.mentionList = this.root.querySelector('[data-role="mentionList"]') as HTMLDivElement;
     this.tableContextMenu = this.root.querySelector('[data-role="tableContextMenu"]') as HTMLDivElement;
     this.tablePropsBackdrop = this.root.querySelector('[data-role="tablePropsBackdrop"]') as HTMLDivElement;
     this.tablePropsDialog = this.root.querySelector('[data-role="tablePropsDialog"]') as HTMLDivElement;
@@ -3856,6 +3957,464 @@ export class RichEditor {
     positionPopupNearAnchor(shell, this.emojiButton, this.emojiPicker, { centerAnchor: true });
   }
 
+  private isMentionPopupVisible(): boolean {
+    return !this.mentionPopup.hidden;
+  }
+
+  private openMentionPopupFromMatch(match: { query: string; range: Range }): boolean {
+    this.mentionQuery = match.query;
+    this.mentionReplaceRange = match.range;
+    this.mentionCandidates = this.getMentionCandidates(match.query);
+    if (this.mentionCandidates.length === 0) {
+      this.hideMentionPopup();
+      return false;
+    }
+
+    this.mentionActiveIndex = 0;
+    this.renderMentionCandidates();
+    this.positionMentionPopup(match.range);
+    window.requestAnimationFrame(() => this.scrollActiveMentionIntoView());
+    return true;
+  }
+
+  private hideMentionPopup(): void {
+    this.mentionPopup.hidden = true;
+    this.mentionCandidates = [];
+    this.mentionActiveIndex = 0;
+    this.mentionQuery = "";
+    this.mentionReplaceRange = null;
+    this.mentionList.innerHTML = "";
+  }
+
+  private updateMentionAutocompleteFromSelection(compositionText = ""): void {
+    if (!this.mentionEnabled) {
+      this.hideMentionPopup();
+      return;
+    }
+
+    if (this.isSelectionOnMentionToken()) {
+      this.hideMentionPopup();
+      return;
+    }
+
+    const match = this.getMentionMatchAtSelection(compositionText);
+    if (!match) {
+      this.hideMentionPopup();
+      return;
+    }
+
+    if (match.query.length === 0 && !this.isMentionPopupVisible()) {
+      this.openMentionPopupFromMatch(match);
+      return;
+    }
+
+    const prevQuery = this.mentionQuery;
+
+    this.mentionQuery = match.query;
+    this.mentionReplaceRange = match.range;
+    this.mentionCandidates = this.getMentionCandidates(match.query);
+    if (this.mentionCandidates.length === 0) {
+      this.hideMentionPopup();
+      return;
+    }
+
+    if (prevQuery !== match.query || !this.isMentionPopupVisible()) {
+      this.mentionActiveIndex = 0;
+    } else {
+      this.mentionActiveIndex = Math.min(this.mentionActiveIndex, this.mentionCandidates.length - 1);
+    }
+    this.renderMentionCandidates();
+    this.positionMentionPopup(match.range);
+    window.requestAnimationFrame(() => this.scrollActiveMentionIntoView());
+  }
+
+  private getMentionCandidates(query: string): string[] {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      return [...this.mentionItems];
+    }
+
+    const startsWith = this.mentionItems.filter((item) => item.toLowerCase().startsWith(normalized));
+    const includes = this.mentionItems.filter(
+      (item) => !item.toLowerCase().startsWith(normalized) && item.toLowerCase().includes(normalized),
+    );
+    return [...startsWith, ...includes].slice(0, this.mentionMaxResults);
+  }
+
+  private getMentionMatchAtSelection(compositionText = ""): { query: string; range: Range } | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.startContainer) || !this.editor.contains(range.endContainer)) {
+      return null;
+    }
+
+    const block = this.getSelectionBlock();
+    if (!block || !this.editor.contains(block)) {
+      return null;
+    }
+
+    const beforeRange = range.cloneRange();
+    beforeRange.selectNodeContents(block);
+    const caretContainer = range.collapsed ? range.startContainer : range.endContainer;
+    const caretOffset = range.collapsed ? range.startOffset : range.endOffset;
+    beforeRange.setEnd(caretContainer, caretOffset);
+    const beforeFromDom = beforeRange.toString().replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
+    const before = compositionText.length > 0 && !beforeFromDom.endsWith(compositionText)
+      ? `${beforeFromDom}${compositionText}`
+      : beforeFromDom;
+    const match = before.match(/(?:^|[\s/,.])@([\w가-힣._-]{0,30})$/);
+    if (!match) {
+      return null;
+    }
+
+    const mentionRange = range.cloneRange();
+    const query = match[1] ?? "";
+    const mentionStartOffset = Math.max(0, before.length - (query.length + 1));
+    const startPosition = this.resolveEditorTextPosition(mentionStartOffset, block);
+    const endPosition = this.resolveEditorTextPosition(before.length, block);
+    if (!startPosition || !endPosition) {
+      return null;
+    }
+
+    mentionRange.setStart(startPosition.node, startPosition.offset);
+    mentionRange.setEnd(endPosition.node, endPosition.offset);
+
+    return {
+      query,
+      range: mentionRange,
+    };
+  }
+
+  private isSelectionOnMentionToken(): boolean {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    const getToken = (node: Node | null): HTMLElement | null => {
+      if (!node) {
+        return null;
+      }
+
+      if (node instanceof HTMLElement) {
+        return node.closest(".re-mention-token");
+      }
+
+      return node.parentElement?.closest(".re-mention-token") ?? null;
+    };
+
+    if (getToken(range.startContainer) || getToken(range.endContainer) || getToken(range.commonAncestorContainer)) {
+      return true;
+    }
+
+    const block = this.getSelectionBlock();
+    if (block) {
+      const tokens = Array.from(block.querySelectorAll(".re-mention-token")) as HTMLElement[];
+      if (tokens.some((token) => range.intersectsNode(token))) {
+        return true;
+      }
+    }
+
+    if (!range.collapsed) {
+      return false;
+    }
+
+    const caretNode = range.startContainer;
+    if (caretNode instanceof Text) {
+      if (range.startOffset <= 0 && getToken(caretNode.previousSibling)) {
+        return true;
+      }
+      if (range.startOffset >= caretNode.length && getToken(caretNode.nextSibling)) {
+        return true;
+      }
+      return false;
+    }
+
+    if (caretNode instanceof HTMLElement) {
+      const index = range.startOffset;
+      const rightNode = index >= 0 && index < caretNode.childNodes.length ? caretNode.childNodes[index] : null;
+      const leftNode = index - 1 >= 0 && index - 1 < caretNode.childNodes.length ? caretNode.childNodes[index - 1] : null;
+      return Boolean(getToken(rightNode) || getToken(leftNode));
+    }
+
+    return false;
+  }
+
+  private resolveEditorTextPosition(offset: number, root: ParentNode = this.editor): { node: Text; offset: number } | null {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (textNode) => this.isMeaningfulEditableText(textNode.textContent ?? "")
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP,
+    });
+
+    let consumed = 0;
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode as Text;
+      const length = textNode.data.length;
+      if (offset <= consumed + length) {
+        return { node: textNode, offset: Math.max(0, offset - consumed) };
+      }
+      consumed += length;
+    }
+
+    return null;
+  }
+
+  private renderMentionCandidates(): void {
+    const options = this.mentionCandidates
+      .map((name, index) => {
+        const activeClass = index === this.mentionActiveIndex ? " is-active" : "";
+        return `<button type="button" class="re-mention-item${activeClass}" data-mention-index="${index}" data-mention-value="${name}">${this.mentionTrigger}${name}</button>`;
+      })
+      .join("");
+
+    this.mentionList.innerHTML = options;
+    this.mentionPopup.hidden = false;
+    this.scrollActiveMentionIntoView();
+  }
+
+  private scrollActiveMentionIntoView(): void {
+    const active = this.mentionList.querySelector(".re-mention-item.is-active") as HTMLElement | null;
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  private positionMentionPopup(anchorRange: Range): void {
+    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
+    if (!shell) {
+      return;
+    }
+
+    if (typeof anchorRange.getBoundingClientRect !== "function") {
+      this.mentionPopup.style.visibility = "";
+      this.mentionPopup.hidden = false;
+      return;
+    }
+
+    const rect = anchorRange.getBoundingClientRect();
+    const x = rect.left;
+    const y = rect.bottom;
+    this.mentionPopup.style.visibility = "hidden";
+    this.mentionPopup.hidden = false;
+    positionPopupAtPoint(shell, this.mentionPopup, x, y + 4);
+    this.mentionPopup.style.visibility = "";
+  }
+
+  private moveMentionActiveIndex(step: 1 | -1): void {
+    if (this.mentionCandidates.length === 0) {
+      return;
+    }
+
+    const length = this.mentionCandidates.length;
+    this.mentionActiveIndex = (this.mentionActiveIndex + step + length) % length;
+    this.renderMentionCandidates();
+  }
+
+  private applyMentionAtActiveIndex(): boolean {
+    const value = this.mentionCandidates[this.mentionActiveIndex];
+    if (!value || !this.mentionReplaceRange) {
+      return false;
+    }
+
+    this.focusEditor();
+    const selection = window.getSelection();
+    if (!selection) {
+      return false;
+    }
+
+    const range = this.mentionReplaceRange.cloneRange();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    const token = document.createElement("span");
+    token.className = "re-mention-token";
+    token.dataset.mention = value;
+    token.contentEditable = "false";
+    token.textContent = `${this.mentionTrigger}${value}`;
+
+    const spacer = document.createTextNode(" ");
+    // 이미지 삽입과 동일하게 공통 caret 삽입 경로를 사용해, 삽입 직후 연속 입력 위치를 안정화한다.
+    this.insertNodesAtCaret([token, spacer]);
+
+    this.focusEditor();
+    const selectionAfterInsert = window.getSelection();
+    if (selectionAfterInsert && selectionAfterInsert.rangeCount > 0) {
+      const caretRange = selectionAfterInsert.getRangeAt(0);
+      selectionAfterInsert.removeAllRanges();
+      selectionAfterInsert.addRange(caretRange);
+    }
+    window.requestAnimationFrame(() => {
+      this.getSelectionBlock()?.scrollIntoView({ block: "nearest" });
+    });
+
+    this.hideMentionPopup();
+    this.updateToolbarState();
+    this.debouncedSave();
+    return true;
+  }
+
+  private handleMentionKeydown(event: KeyboardEvent): boolean {
+    if (!this.isMentionPopupVisible()) {
+      return false;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      this.moveMentionActiveIndex(1);
+      return true;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      this.moveMentionActiveIndex(-1);
+      return true;
+    }
+
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      return this.applyMentionAtActiveIndex();
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.hideMentionPopup();
+      return true;
+    }
+
+    return false;
+  }
+
+  private isCaretAfterMentionToken(): boolean {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return false;
+    }
+
+    const resolveMentionToken = (node: Node | null): HTMLElement | null => {
+      if (!node) {
+        return null;
+      }
+
+      const element = node instanceof HTMLElement ? node : node.parentElement;
+      const token = element?.closest(".re-mention-token") as HTMLElement | null;
+      return token && this.editor.contains(token) ? token : null;
+    };
+
+    if (range.startContainer instanceof HTMLElement) {
+      const index = range.startOffset - 1;
+      if (index >= 0) {
+        const candidate = range.startContainer.childNodes[index] ?? null;
+        if (resolveMentionToken(candidate)) {
+          return true;
+        }
+
+        if (candidate instanceof Text && !this.isMeaningfulEditableText(candidate.textContent ?? "")) {
+          const previous = candidate.previousSibling;
+          if (resolveMentionToken(previous)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    if (range.startContainer instanceof Text) {
+      const text = range.startContainer;
+      if (range.startOffset <= 0 && resolveMentionToken(text.previousSibling)) {
+        return true;
+      }
+
+      if (range.startOffset >= text.length && resolveMentionToken(text.nextSibling)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private handleMentionContinuationEnterKeydown(event: KeyboardEvent): boolean {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    if (!this.isCaretAfterMentionToken()) {
+      return false;
+    }
+
+    event.preventDefault();
+    if (!this.insertParagraphAfterCaretBlock()) {
+      this.exec("insertParagraph");
+    } else {
+      this.debouncedSave();
+      this.updateToolbarState();
+    }
+    return true;
+  }
+
+  private insertParagraphAfterCaretBlock(): boolean {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return false;
+    }
+
+    const block = this.getSelectionBlock();
+    if (!block || block === this.editor) {
+      return false;
+    }
+
+    const tag = block.tagName.toLowerCase();
+    if (!/^(p|div|li|blockquote|pre|h1|h2|h3|h4|h5|h6)$/.test(tag)) {
+      return false;
+    }
+
+    const paragraph = document.createElement("p");
+    paragraph.innerHTML = "<br>";
+    block.insertAdjacentElement("afterend", paragraph);
+
+    const caretRange = document.createRange();
+    caretRange.selectNodeContents(paragraph);
+    caretRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caretRange);
+    this.captureSelection();
+    return true;
+  }
+
+  private handleMentionClick(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    const option = target.closest("[data-mention-index]") as HTMLElement | null;
+    if (!option || !this.mentionPopup.contains(option)) {
+      return false;
+    }
+
+    const index = Number(option.dataset.mentionIndex);
+    if (!Number.isInteger(index) || index < 0 || index >= this.mentionCandidates.length) {
+      return false;
+    }
+
+    this.mentionActiveIndex = index;
+    return this.applyMentionAtActiveIndex();
+  }
+
   private handleCopy(event: ClipboardEvent): void {
     if (!event.clipboardData) {
       this.debugLog("copy skipped: clipboardData unavailable");
@@ -4242,6 +4801,14 @@ export class RichEditor {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    if (this.handleMentionKeydown(event)) {
+      return;
+    }
+
+    if (this.handleMentionContinuationEnterKeydown(event)) {
+      return;
+    }
+
     if (this.handleImageArrowNavigationKeydown(event)) {
       return;
     }

@@ -531,23 +531,49 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.hideTableContextMenu();
   });
 
+  ctx.mentionPopup?.addEventListener("mousedown", (event: Event) => {
+    event.preventDefault();
+  });
+
+  ctx.mentionPopup?.addEventListener("click", (event: Event) => {
+    if (ctx.handleMentionClick?.(event.target)) {
+      ctx.updateToolbarState();
+    }
+  });
+
   ctx.editor.addEventListener("keyup", () => {
+    if (ctx.isComposing) {
+      return;
+    }
     ctx.syncActiveImageWithCaret?.();
     ctx.captureSelection();
     ctx.updateToolbarState();
   });
   ctx.editor.addEventListener("mouseup", () => {
+    if (ctx.isComposing) {
+      return;
+    }
     ctx.syncActiveImageWithCaret?.();
     ctx.captureSelection();
     ctx.updateToolbarState();
   });
   ctx.editor.addEventListener("focus", () => {
+    if (ctx.isComposing) {
+      return;
+    }
     ctx.syncActiveImageWithCaret?.();
     ctx.captureSelection();
     ctx.updateToolbarState();
   });
 
   ctx.editor.addEventListener("input", () => {
+    if (ctx.isComposing) {
+      ctx.captureSelection();
+      ctx.updateMentionAutocompleteFromSelection?.(ctx.composingText);
+      ctx.updateToolbarState();
+      return;
+    }
+
     const skipNormalize = ctx.consumeSkipNormalizeOnNextInput?.() as boolean | undefined;
     if (!skipNormalize) {
       ctx.normalizeTopLevelParagraphs?.();
@@ -556,20 +582,23 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.normalizeInlineCaretMarkerAtSelection?.();
     ctx.syncActiveImageWithCaret?.();
     ctx.captureSelection();
+    ctx.updateMentionAutocompleteFromSelection?.();
     ctx.updateToolbarState();
   });
 
   ctx.editor.addEventListener("compositionstart", () => {
     ctx.isComposing = true;
+    ctx.composingText = "";
+  });
+
+  ctx.editor.addEventListener("compositionupdate", (event: CompositionEvent) => {
+    ctx.composingText = event.data ?? "";
+    ctx.updateMentionAutocompleteFromSelection?.(ctx.composingText);
   });
 
   ctx.editor.addEventListener("compositionend", () => {
     ctx.isComposing = false;
-    ctx.normalizeTopLevelParagraphs?.();
-    ctx.normalizeInlineCaretMarkerAtSelection?.();
-    ctx.syncActiveImageWithCaret?.();
-    ctx.captureSelection();
-    ctx.updateToolbarState();
+    ctx.composingText = "";
   });
 
   ctx.editor.addEventListener("click", (event: Event) => {
@@ -615,6 +644,7 @@ export function bindRichEditorEvents(ctx: any): void {
       ctx.keyboardAnchorCell = null;
       ctx.keyboardFocusCell = null;
       ctx.lastTableAnchorCell = null;
+      ctx.hideMentionPopup?.();
       if (ctx.isEmptyEditorClickTarget(target)) {
         ctx.resetTypingColorToDefault();
       }
@@ -865,6 +895,11 @@ export function bindRichEditorEvents(ctx: any): void {
     if (ctx.isRestoringSelection) {
       return;
     }
+    if (ctx.isComposing) {
+      ctx.captureSelection();
+      ctx.updateMentionAutocompleteFromSelection?.(ctx.composingText);
+      return;
+    }
     if (ctx.isToolbarInteracting) {
       return;
     }
@@ -881,6 +916,7 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.syncSelectedCellsWithCaret();
     ctx.syncActiveImageWithCaret?.();
     ctx.captureSelection();
+    ctx.updateMentionAutocompleteFromSelection?.();
     ctx.updateToolbarState();
   });
 
@@ -901,6 +937,10 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (!ctx.tableContextMenu.hidden && !ctx.tableContextMenu.contains(target)) {
       ctx.hideTableContextMenu();
+    }
+
+    if (!ctx.mentionPopup.hidden && !ctx.mentionPopup.contains(target)) {
+      ctx.hideMentionPopup?.();
     }
 
     if (!ctx.tablePropsDialog.hidden && !ctx.tablePropsDialog.contains(target) && !ctx.tableContextMenu.contains(target)) {

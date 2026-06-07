@@ -1,7 +1,18 @@
+export type MentionOptions = {
+  enabled?: boolean;
+  trigger?: string;
+  items?: string[];
+  maxResults?: number;
+};
+
 // 에디터 생성 옵션.
 export type RichEditorOptions = {
   storageKey?: string;
+  autosaveEnabled?: boolean;
   autosaveDelay?: number;
+  mentions?: MentionOptions;
+  // Deprecated: use mentions.items instead.
+  mentionItems?: string[];
 };
 
 // 로컬에 저장되는 UI 설정.
