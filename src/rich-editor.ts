@@ -4002,6 +4002,11 @@ export class RichEditor {
       return;
     }
 
+    if (this.isRangeTouchingMentionToken(match.range)) {
+      this.hideMentionPopup();
+      return;
+    }
+
     if (match.query.length === 0 && !this.isMentionPopupVisible()) {
       this.openMentionPopupFromMatch(match);
       return;
@@ -4138,10 +4143,64 @@ export class RichEditor {
       const index = range.startOffset;
       const rightNode = index >= 0 && index < caretNode.childNodes.length ? caretNode.childNodes[index] : null;
       const leftNode = index - 1 >= 0 && index - 1 < caretNode.childNodes.length ? caretNode.childNodes[index - 1] : null;
-      return Boolean(getToken(rightNode) || getToken(leftNode));
+
+      if (getToken(rightNode) || getToken(leftNode)) {
+        return true;
+      }
+
+      const findMentionAcrossWhitespace = (startIndex: number, step: 1 | -1): boolean => {
+        let i = startIndex;
+        while (i >= 0 && i < caretNode.childNodes.length) {
+          const sibling = caretNode.childNodes[i] ?? null;
+          if (!sibling) {
+            return false;
+          }
+
+          if (getToken(sibling)) {
+            return true;
+          }
+
+          if (sibling instanceof Text && !this.isMeaningfulEditableText(sibling.textContent ?? "")) {
+            i += step;
+            continue;
+          }
+
+          return false;
+        }
+
+        return false;
+      };
+
+      return findMentionAcrossWhitespace(index, 1) || findMentionAcrossWhitespace(index - 1, -1);
     }
 
     return false;
+  }
+
+  private isRangeTouchingMentionToken(range: Range): boolean {
+    const getToken = (node: Node | null): HTMLElement | null => {
+      if (!node) {
+        return null;
+      }
+
+      if (node instanceof HTMLElement) {
+        return node.closest(".re-mention-token");
+      }
+
+      return node.parentElement?.closest(".re-mention-token") ?? null;
+    };
+
+    if (getToken(range.startContainer) || getToken(range.endContainer) || getToken(range.commonAncestorContainer)) {
+      return true;
+    }
+
+    const block = this.getSelectionBlock();
+    if (!block) {
+      return false;
+    }
+
+    const tokens = Array.from(block.querySelectorAll(".re-mention-token")) as HTMLElement[];
+    return tokens.some((token) => range.intersectsNode(token));
   }
 
   private resolveEditorTextPosition(offset: number, root: ParentNode = this.editor): { node: Text; offset: number } | null {
@@ -4358,6 +4417,54 @@ export class RichEditor {
       this.debouncedSave();
       this.updateToolbarState();
     }
+    return true;
+  }
+
+  private handleMentionLeadingHomeKeydown(event: KeyboardEvent): boolean {
+    if (event.key !== "Home") {
+      return false;
+    }
+
+    // Ctrl/Cmd+Home 등 문서 단위 이동 단축키는 기본 동작을 유지한다.
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return false;
+    }
+
+    const block = this.getSelectionBlock();
+    if (!block || block === this.editor) {
+      return false;
+    }
+
+    const firstMeaningfulChild = Array.from(block.childNodes).find((node) => {
+      if (node instanceof Text) {
+        return this.isMeaningfulEditableText(node.textContent ?? "");
+      }
+      return true;
+    });
+
+    const firstMentionToken = firstMeaningfulChild instanceof HTMLElement
+      && firstMeaningfulChild.classList.contains("re-mention-token");
+    if (!firstMentionToken) {
+      return false;
+    }
+
+    event.preventDefault();
+    const caretRange = document.createRange();
+    caretRange.setStart(block, 0);
+    caretRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caretRange);
+    this.captureSelection();
     return true;
   }
 
@@ -4800,6 +4907,10 @@ export class RichEditor {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    if (this.handleMentionLeadingHomeKeydown(event)) {
+      return;
+    }
+
     if (this.handleMentionKeydown(event)) {
       return;
     }

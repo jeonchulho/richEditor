@@ -273,3 +273,85 @@ describe("RichEditor table insertion trailing paragraph", () => {
     expect(topLevelParagraphs.length).toBe(0);
   });
 });
+
+describe("RichEditor mention leading Home key", () => {
+  it("moves caret to the start of the line when the line begins with a mention token", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<p><span class="re-mention-token" contenteditable="false" data-mention="김민지">@김민지</span> 하하</p>';
+
+    const tailText = editor.querySelector("p")?.lastChild;
+    if (!(tailText instanceof Text)) {
+      throw new Error("tail text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(tailText, tailText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Home",
+    }));
+
+    const nextSelection = window.getSelection();
+    expect(nextSelection?.rangeCount).toBe(1);
+    const nextRange = nextSelection?.getRangeAt(0) ?? null;
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
+    expect(nextRange?.startContainer).toBe(paragraph);
+    expect(nextRange?.startOffset).toBe(0);
+    expect(nextRange?.collapsed).toBe(true);
+  });
+});
+
+describe("RichEditor completed mention popup suppression", () => {
+  it("does not reopen popup from completed mention text at mention boundary", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      updateMentionAutocompleteFromSelection: () => void;
+      isMentionPopupVisible: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    const paragraph = document.createElement("p");
+    const token = document.createElement("span");
+    token.className = "re-mention-token";
+    token.contentEditable = "false";
+    token.dataset.mention = "박준호";
+    token.textContent = "@박준호";
+    paragraph.appendChild(token);
+    paragraph.appendChild(document.createTextNode(" "));
+    paragraph.appendChild(document.createTextNode("아니다"));
+    editor.innerHTML = "";
+    editor.appendChild(paragraph);
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    // 토큰 바로 뒤 경계(caretNode=paragraph)에서도 완성 토큰 기반 재매칭으로 팝업이 열리면 안 된다.
+    range.setStart(paragraph, 1);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.updateMentionAutocompleteFromSelection();
+    expect(editorInstance.isMentionPopupVisible()).toBe(false);
+  });
+});
