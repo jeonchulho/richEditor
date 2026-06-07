@@ -16,6 +16,14 @@ npm run build
 npm run test
 ```
 
+환경 변수 설정(선택):
+
+```bash
+cp .env.example .env
+```
+
+- `VITE_MENTION_API_ENDPOINT`: 맨션 자동완성 목록을 가져올 API 주소 (기본값: `/api/mentions`)
+
 ## 포함 기능
 
 - Toolbar 버튼과 `execCommand` 기반 명령 연결

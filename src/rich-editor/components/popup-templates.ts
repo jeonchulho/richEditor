@@ -19,6 +19,10 @@ export const PICKER_POPUPS_TEMPLATE = `
     <div class="re-table-size-grid" data-role="tableSizeGrid"></div>
   </div>
 
+  <div class="re-mention-popup" data-role="mentionPopup" hidden>
+    <div class="re-mention-list" data-role="mentionList"></div>
+  </div>
+
   <div class="re-table-props-backdrop" data-role="tablePropsBackdrop" hidden></div>
   <div class="re-table-props-dialog" data-role="tablePropsDialog" hidden>
     <div class="re-table-props-window-head" data-role="tablePropsDragHandle">
