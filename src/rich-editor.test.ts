@@ -272,6 +272,42 @@ describe("RichEditor table insertion trailing paragraph", () => {
     const topLevelParagraphs = editor.querySelectorAll(":scope > p");
     expect(topLevelParagraphs.length).toBe(0);
   });
+
+  it("inserts table outside paragraph when caret is inside a top-level paragraph", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTable: (rows: number, cols: number) => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p>hello world</p>";
+
+    const textNode = editor.querySelector("p")?.firstChild;
+    if (!(textNode instanceof Text)) {
+      throw new Error("paragraph text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(textNode, 3);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertTable(2, 2);
+
+    const paragraph = editor.querySelector(":scope > p") as HTMLParagraphElement | null;
+    const table = editor.querySelector(":scope > table") as HTMLTableElement | null;
+    expect(paragraph).not.toBeNull();
+    expect(table).not.toBeNull();
+    expect(paragraph?.contains(table as Node)).toBe(false);
+  });
 });
 
 describe("RichEditor mention leading Home key", () => {
@@ -353,5 +389,99 @@ describe("RichEditor completed mention popup suppression", () => {
 
     editorInstance.updateMentionAutocompleteFromSelection();
     expect(editorInstance.isMentionPopupVisible()).toBe(false);
+  });
+});
+
+describe("RichEditor table structure normalization", () => {
+  it("moves invalid direct paragraph child out of table", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      normalizeTopLevelParagraphs: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "";
+
+    const table = document.createElement("table");
+    table.className = "re-table";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.textContent = "cell";
+    tr.appendChild(td);
+    table.appendChild(tr);
+
+    const invalidParagraph = document.createElement("p");
+    invalidParagraph.textContent = "outside target";
+    table.appendChild(invalidParagraph);
+    editor.appendChild(table);
+
+    editorInstance.normalizeTopLevelParagraphs();
+
+    expect(table.querySelector(":scope > p")).toBeNull();
+    expect(editor.firstElementChild?.tagName.toLowerCase()).toBe("table");
+    expect(editor.lastElementChild?.tagName.toLowerCase()).toBe("p");
+    expect((editor.lastElementChild as HTMLParagraphElement).textContent).toBe("outside target");
+  });
+
+  it("moves invalid paragraph under tbody out of table", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      normalizeTopLevelParagraphs: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "";
+
+    const table = document.createElement("table");
+    table.className = "re-table";
+    const tbody = document.createElement("tbody");
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.textContent = "cell";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    const invalidParagraph = document.createElement("p");
+    invalidParagraph.textContent = "tbody invalid";
+    tbody.appendChild(invalidParagraph);
+
+    table.appendChild(tbody);
+    editor.appendChild(table);
+
+    editorInstance.normalizeTopLevelParagraphs();
+
+    expect(table.querySelector("tbody > p")).toBeNull();
+    expect(editor.firstElementChild?.tagName.toLowerCase()).toBe("table");
+    expect(editor.lastElementChild?.tagName.toLowerCase()).toBe("p");
+    expect((editor.lastElementChild as HTMLParagraphElement).textContent).toBe("tbody invalid");
+  });
+
+  it("removes redundant empty paragraphs around table and keeps one clean trailing paragraph", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      normalizeTopLevelParagraphs: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<table class="re-table"><tbody><tr><td>cell</td></tr></tbody></table>',
+      "<p></p>",
+      "<p></p>",
+      '<p style="font-size: 12px !important;">\u200B</p>',
+      "<p></p>",
+    ].join("");
+
+    editorInstance.normalizeTopLevelParagraphs();
+
+    const paragraphs = Array.from(editor.querySelectorAll(":scope > p")) as HTMLParagraphElement[];
+    expect(paragraphs.length).toBe(1);
+    expect(paragraphs[0]?.getAttribute("style")).toBeNull();
+    expect(paragraphs[0]?.innerHTML.toLowerCase()).toContain("br");
   });
 });

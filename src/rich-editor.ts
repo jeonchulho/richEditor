@@ -1550,7 +1550,7 @@ export class RichEditor {
       table.appendChild(tr);
     }
 
-    this.insertNodeAtCaret(table);
+    this.insertTableNodeAtCaret(table);
     this.insertTrailingParagraphAfterTopLevelAnchor(table);
     this.normalizeTopLevelParagraphs();
     this.enableTableColumnResize(table);
@@ -3026,7 +3026,7 @@ export class RichEditor {
 
     const active = this.getActiveEditorRange();
     if (active) {
-      this.insertNodeAtCaret(table);
+      this.insertTableNodeAtCaret(table);
       this.insertTrailingParagraphAfterTopLevelAnchor(table);
     } else {
       this.editor.appendChild(table);
@@ -3720,6 +3720,39 @@ export class RichEditor {
     selection.removeAllRanges();
     selection.addRange(range);
     this.captureSelection();
+  }
+
+  private insertTableNodeAtCaret(table: HTMLTableElement): void {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      this.editor.appendChild(table);
+      this.captureSelection();
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      this.editor.appendChild(table);
+      this.captureSelection();
+      return;
+    }
+
+    const startElement = this.getRangeStartContainerElement(range);
+    const paragraph = startElement?.closest("p") as HTMLParagraphElement | null;
+    if (paragraph && paragraph.parentElement === this.editor) {
+      range.deleteContents();
+      paragraph.insertAdjacentElement("afterend", table);
+
+      const nextRange = document.createRange();
+      nextRange.setStartAfter(table);
+      nextRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+      this.captureSelection();
+      return;
+    }
+
+    this.insertNodeAtCaret(table);
   }
 
   private insertNodesAtCaret(nodes: Node[]): void {
@@ -5651,6 +5684,113 @@ export class RichEditor {
       return true;
     };
 
+    const normalizeTableStructure = (table: HTMLTableElement): boolean => {
+      const tableParent = table.parentNode;
+      if (!tableParent) {
+        return false;
+      }
+
+      let changedLocal = false;
+      let insertAfter: Node = table;
+
+      const moveOutside = (node: Node): void => {
+        tableParent.insertBefore(node, insertAfter.nextSibling);
+        insertAfter = node;
+        changedLocal = true;
+      };
+
+      const moveInvalidChildren = (parent: Node, allowedTags: Set<string>): void => {
+        for (const child of Array.from(parent.childNodes)) {
+          if (child instanceof HTMLElement) {
+            const tag = child.tagName.toLowerCase();
+            if (!allowedTags.has(tag)) {
+              moveOutside(child);
+            }
+            continue;
+          }
+
+          if (child.nodeType === Node.TEXT_NODE) {
+            const text = (child.textContent ?? "").replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
+            if (text.trim().length > 0) {
+              const p = document.createElement("p");
+              p.textContent = text;
+              moveOutside(p);
+              child.remove();
+            } else {
+              child.remove();
+              changedLocal = true;
+            }
+          }
+        }
+      };
+
+      moveInvalidChildren(table, new Set(["caption", "colgroup", "thead", "tbody", "tfoot", "tr"]));
+
+      for (const group of Array.from(table.querySelectorAll("colgroup"))) {
+        moveInvalidChildren(group, new Set(["col"]));
+      }
+
+      for (const section of Array.from(table.querySelectorAll("thead,tbody,tfoot"))) {
+        moveInvalidChildren(section, new Set(["tr"]));
+      }
+
+      for (const row of Array.from(table.querySelectorAll("tr"))) {
+        moveInvalidChildren(row, new Set(["td", "th"]));
+      }
+
+      return changedLocal;
+    };
+
+    const isVisuallyEmptyParagraph = (p: HTMLParagraphElement): boolean => {
+      const meaningful = this.isMeaningfulEditableText(p.textContent ?? "");
+      const hasSpecialNode = Boolean(p.querySelector("img,table,.re-image-wrap"));
+      return !meaningful && !hasSpecialNode;
+    };
+
+    const cleanupTableAdjacentEmptyParagraphs = (): boolean => {
+      let changedLocal = false;
+      for (const p of Array.from(this.editor.querySelectorAll(":scope > p")) as HTMLParagraphElement[]) {
+        if (marker && p.contains(marker)) {
+          continue;
+        }
+
+        if (!isVisuallyEmptyParagraph(p)) {
+          continue;
+        }
+
+        const prev = p.previousElementSibling as HTMLElement | null;
+        const next = p.nextElementSibling as HTMLElement | null;
+        const prevTag = prev?.tagName.toLowerCase() ?? "";
+        const nextTag = next?.tagName.toLowerCase() ?? "";
+
+        const prevIsEmptyParagraph = prev?.tagName.toLowerCase() === "p"
+          && isVisuallyEmptyParagraph(prev as HTMLParagraphElement)
+          && !(marker && prev.contains(marker));
+        if (prevIsEmptyParagraph) {
+          p.remove();
+          changedLocal = true;
+          continue;
+        }
+
+        const nearTable = prevTag === "table" || nextTag === "table";
+        if (!nearTable) {
+          continue;
+        }
+
+        const keepSingleTrailingAfterLastTable = prevTag === "table" && !next;
+        if (keepSingleTrailingAfterLastTable) {
+          p.removeAttribute("style");
+          p.innerHTML = "<br>";
+          continue;
+        }
+
+        p.remove();
+        changedLocal = true;
+      }
+
+      return changedLocal;
+    };
+
     let changed = true;
     let guard = 0;
     while (changed && guard < 10) {
@@ -5688,6 +5828,14 @@ export class RichEditor {
         }
 
         const tag = node.tagName.toLowerCase();
+
+        if (tag === "table") {
+          if (normalizeTableStructure(node as HTMLTableElement)) {
+            changed = true;
+          }
+          continue;
+        }
+
         if (tag === "br") {
           const p = document.createElement("p");
           node.replaceWith(p);
@@ -5728,6 +5876,10 @@ export class RichEditor {
         }
         ensureParagraphContent(p);
         node.replaceWith(p);
+        changed = true;
+      }
+
+      if (cleanupTableAdjacentEmptyParagraphs()) {
         changed = true;
       }
     }
@@ -6161,6 +6313,7 @@ export class RichEditor {
 
   private deleteSpecificTable(table: HTMLTableElement, source: "inside-cell" | "outside-table-boundary"): void {
     const placeholder = document.createElement("p");
+    placeholder.innerHTML = "<br>";
     table.insertAdjacentElement("afterend", placeholder);
 
     this.clearSelectedCells();
@@ -6188,6 +6341,7 @@ export class RichEditor {
 
   private deleteSpecificImage(wrapper: HTMLElement, source: "outside-image-boundary" | "active-image"): void {
     const placeholder = document.createElement("p");
+    placeholder.innerHTML = "<br>";
     wrapper.insertAdjacentElement("afterend", placeholder);
 
     wrapper.remove();
@@ -6333,12 +6487,30 @@ export class RichEditor {
         // 경계 배치가 불가능한 구조면 기존 fallback으로 새 문단을 생성한다.
       }
 
-      targetElement = document.createElement("p");
-      createdFallbackBlock = true;
-      if (direction === "up") {
-        tableHost.insertAdjacentElement("beforebegin", targetElement);
+      const adjacent = direction === "up"
+        ? tableHost.previousElementSibling as HTMLElement | null
+        : tableHost.nextElementSibling as HTMLElement | null;
+      const canReuseAdjacentParagraph = adjacent
+        && adjacent.tagName.toLowerCase() === "p"
+        && !this.isMeaningfulEditableText(adjacent.textContent ?? "")
+        && !adjacent.querySelector("img,table,.re-image-wrap");
+
+      if (canReuseAdjacentParagraph) {
+        targetElement = adjacent;
       } else {
-        tableHost.insertAdjacentElement("afterend", targetElement);
+        targetElement = document.createElement("p");
+        targetElement.innerHTML = "<br>";
+        createdFallbackBlock = true;
+        if (direction === "up") {
+          tableHost.insertAdjacentElement("beforebegin", targetElement);
+        } else {
+          tableHost.insertAdjacentElement("afterend", targetElement);
+        }
+      }
+
+      if (!this.isMeaningfulEditableText(targetElement.textContent ?? "")) {
+        targetElement.removeAttribute("style");
+        targetElement.innerHTML = "<br>";
       }
     }
 
@@ -6447,13 +6619,31 @@ export class RichEditor {
         // 경계 배치가 불가능한 구조에서만 fallback 문단을 생성한다.
       }
 
-      target = document.createElement("p");
-      if (side === "after") {
-        tableHost.insertAdjacentElement("afterend", target);
+      const adjacent = side === "after"
+        ? tableHost.nextElementSibling as HTMLElement | null
+        : tableHost.previousElementSibling as HTMLElement | null;
+      const canReuseAdjacentParagraph = adjacent
+        && adjacent.tagName.toLowerCase() === "p"
+        && !this.isMeaningfulEditableText(adjacent.textContent ?? "")
+        && !adjacent.querySelector("img,table,.re-image-wrap");
+
+      if (canReuseAdjacentParagraph) {
+        target = adjacent;
       } else {
-        tableHost.insertAdjacentElement("beforebegin", target);
+        target = document.createElement("p");
+        target.innerHTML = "<br>";
+        if (side === "after") {
+          tableHost.insertAdjacentElement("afterend", target);
+        } else {
+          tableHost.insertAdjacentElement("beforebegin", target);
+        }
+        created = true;
       }
-      created = true;
+
+      if (!this.isMeaningfulEditableText(target.textContent ?? "")) {
+        target.removeAttribute("style");
+        target.innerHTML = "<br>";
+      }
     }
 
     const range = document.createRange();
@@ -6956,6 +7146,7 @@ export class RichEditor {
   }
 
   private save(): void {
+    this.normalizeTopLevelParagraphs();
     // 편집 HTML을 그대로 저장하므로 스타일/테이블 구조를 보존할 수 있다.
     localStorage.setItem(this.options.storageKey, this.editor.innerHTML);
     this.showSaveStatus("Saved");
@@ -6969,6 +7160,7 @@ export class RichEditor {
 
     // 저장된 문서 HTML을 복구한 뒤, 동적 핸들을 재생성한다.
     this.editor.innerHTML = saved;
+    this.normalizeTopLevelParagraphs();
     this.decorateSpecialNodes();
     this.showSaveStatus("Restored");
   }
