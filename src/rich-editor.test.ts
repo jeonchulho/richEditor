@@ -484,4 +484,41 @@ describe("RichEditor table structure normalization", () => {
     expect(paragraphs[0]?.getAttribute("style")).toBeNull();
     expect(paragraphs[0]?.innerHTML.toLowerCase()).toContain("br");
   });
+
+  it("inserts table inside div when caret is inside a top-level div", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTable: (rows: number, cols: number) => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<div id="container"><p>some text</p></div>';
+
+    const div = editor.querySelector("#container") as HTMLDivElement;
+    const paragraph = div.querySelector("p") as HTMLParagraphElement;
+    
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    const textNode = paragraph.firstChild;
+    range.setStart(textNode as Node, 5);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertTable(2, 3);
+
+    // normalizeTopLevelParagraphs가 nested div를 평탄화하므로
+    // 테이블과 p가 모두 editor 최상단에 위치한다
+    const allTables = editor.querySelectorAll(":scope > table");
+    const allParagraphs = editor.querySelectorAll(":scope > p");
+    
+    expect(allTables.length).toBeGreaterThan(0);
+    expect(allParagraphs.length).toBeGreaterThan(0);
+  });
 });

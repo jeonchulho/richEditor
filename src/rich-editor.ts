@@ -3738,10 +3738,27 @@ export class RichEditor {
     }
 
     const startElement = this.getRangeStartContainerElement(range);
+    
+    // p 태그 처리: p 밖으로 테이블 삽입 (형제로)
     const paragraph = startElement?.closest("p") as HTMLParagraphElement | null;
     if (paragraph && paragraph.parentElement === this.editor) {
       range.deleteContents();
       paragraph.insertAdjacentElement("afterend", table);
+
+      const nextRange = document.createRange();
+      nextRange.setStartAfter(table);
+      nextRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+      this.captureSelection();
+      return;
+    }
+
+    // div 태그 처리: div 내부에 테이블 삽입
+    const div = startElement?.closest("div") as HTMLDivElement | null;
+    if (div && div !== this.editor && div.parentElement === this.editor) {
+      range.deleteContents();
+      div.appendChild(table);
 
       const nextRange = document.createRange();
       nextRange.setStartAfter(table);
