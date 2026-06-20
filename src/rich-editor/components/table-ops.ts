@@ -399,15 +399,23 @@ export function deleteTable(ctx: any): void {
     return;
   }
 
+  const wrapper = table.parentElement instanceof HTMLDivElement
+    && table.parentElement.classList.contains("re-table-wrap")
+    && table.parentElement.parentElement
+    ? table.parentElement
+    : null;
+
+  const removeTarget = wrapper ?? table;
+
   const placeholder = document.createElement("p");
   placeholder.innerHTML = "<br>";
   // 테이블 삭제 직후 caret 유실을 막기 위해 placeholder를 먼저 삽입한다.
-  table.insertAdjacentElement("afterend", placeholder);
+  removeTarget.insertAdjacentElement("afterend", placeholder);
 
   ctx.clearSelectedCells();
   ctx.keyboardAnchorCell = null;
   ctx.keyboardFocusCell = null;
-  table.remove();
+  removeTarget.remove();
 
   const selection = window.getSelection();
   if (selection) {

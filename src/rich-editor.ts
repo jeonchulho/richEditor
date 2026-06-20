@@ -3722,17 +3722,25 @@ export class RichEditor {
     this.captureSelection();
   }
 
+  private createTableWrapper(table: HTMLTableElement): HTMLDivElement {
+    const wrapper = document.createElement("div");
+    wrapper.className = "re-table-wrap";
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
   private insertTableNodeAtCaret(table: HTMLTableElement): void {
+    const tableWrapper = this.createTableWrapper(table);
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
-      this.editor.appendChild(table);
+      this.editor.appendChild(tableWrapper);
       this.captureSelection();
       return;
     }
 
     const range = selection.getRangeAt(0);
     if (!this.editor.contains(range.commonAncestorContainer)) {
-      this.editor.appendChild(table);
+      this.editor.appendChild(tableWrapper);
       this.captureSelection();
       return;
     }
@@ -3743,10 +3751,10 @@ export class RichEditor {
     const paragraph = startElement?.closest("p") as HTMLParagraphElement | null;
     if (paragraph && paragraph.parentElement === this.editor) {
       range.deleteContents();
-      paragraph.insertAdjacentElement("afterend", table);
+      paragraph.insertAdjacentElement("afterend", tableWrapper);
 
       const nextRange = document.createRange();
-      nextRange.setStartAfter(table);
+      nextRange.setStartAfter(tableWrapper);
       nextRange.collapse(true);
       selection.removeAllRanges();
       selection.addRange(nextRange);
@@ -3758,10 +3766,10 @@ export class RichEditor {
     const div = startElement?.closest("div") as HTMLDivElement | null;
     if (div && div !== this.editor && div.parentElement === this.editor) {
       range.deleteContents();
-      div.appendChild(table);
+      div.appendChild(tableWrapper);
 
       const nextRange = document.createRange();
-      nextRange.setStartAfter(table);
+      nextRange.setStartAfter(tableWrapper);
       nextRange.collapse(true);
       selection.removeAllRanges();
       selection.addRange(nextRange);
@@ -3769,7 +3777,7 @@ export class RichEditor {
       return;
     }
 
-    this.insertNodeAtCaret(table);
+    this.insertNodeAtCaret(tableWrapper);
   }
 
   private insertNodesAtCaret(nodes: Node[]): void {
@@ -5015,6 +5023,19 @@ export class RichEditor {
       }
     }
 
+    // Enter로 생성된 빈 줄이 input 직후 정규화에서 즉시 제거되지 않도록
+    // 다음 input 한 번만 normalize를 건너뛴다.
+    if (
+      event.key === "Enter"
+      && !event.shiftKey
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
+      && !event.defaultPrevented
+    ) {
+      this.skipNormalizeOnNextInput = true;
+    }
+
     this.handleModifierShortcuts(event);
   }
 
@@ -5313,6 +5334,22 @@ export class RichEditor {
         return cell;
       }
     }
+    return null;
+  }
+
+  private resolveAdjacentTopLevelTable(host: Node | null): HTMLTableElement | null {
+    if (!(host instanceof HTMLElement)) {
+      return null;
+    }
+
+    if (host.tagName.toLowerCase() === "table") {
+      return host as HTMLTableElement;
+    }
+
+    if (host.tagName.toLowerCase() === "div" && host.classList.contains("re-table-wrap")) {
+      return host.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+    }
+
     return null;
   }
 
@@ -5640,6 +5677,24 @@ export class RichEditor {
       void p;
     };
 
+    const isTableWrapper = (node: HTMLElement): boolean => {
+      return node.tagName.toLowerCase() === "div"
+        && node.classList.contains("re-table-wrap")
+        && Boolean(node.querySelector(":scope > table.re-table"));
+    };
+
+    const isTableBlockElement = (node: Element | null): boolean => {
+      if (!(node instanceof HTMLElement)) {
+        return false;
+      }
+
+      if (node.tagName.toLowerCase() === "table") {
+        return true;
+      }
+
+      return isTableWrapper(node);
+    };
+
     const unwrapTablesFromParagraph = (p: HTMLParagraphElement): boolean => {
       if (!p.querySelector("table")) {
         return false;
@@ -5777,8 +5832,8 @@ export class RichEditor {
 
         const prev = p.previousElementSibling as HTMLElement | null;
         const next = p.nextElementSibling as HTMLElement | null;
-        const prevTag = prev?.tagName.toLowerCase() ?? "";
-        const nextTag = next?.tagName.toLowerCase() ?? "";
+        const prevIsTableBlock = isTableBlockElement(prev);
+        const nextIsTableBlock = isTableBlockElement(next);
 
         const prevIsEmptyParagraph = prev?.tagName.toLowerCase() === "p"
           && isVisuallyEmptyParagraph(prev as HTMLParagraphElement)
@@ -5789,12 +5844,12 @@ export class RichEditor {
           continue;
         }
 
-        const nearTable = prevTag === "table" || nextTag === "table";
+        const nearTable = prevIsTableBlock || nextIsTableBlock;
         if (!nearTable) {
           continue;
         }
 
-        const keepSingleTrailingAfterLastTable = prevTag === "table" && !next;
+        const keepSingleTrailingAfterLastTable = prevIsTableBlock && !next;
         if (keepSingleTrailingAfterLastTable) {
           p.removeAttribute("style");
           p.innerHTML = "<br>";
@@ -5848,6 +5903,14 @@ export class RichEditor {
 
         if (tag === "table") {
           if (normalizeTableStructure(node as HTMLTableElement)) {
+            changed = true;
+          }
+          continue;
+        }
+
+        if (isTableWrapper(node)) {
+          const wrappedTable = node.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+          if (wrappedTable && normalizeTableStructure(wrappedTable)) {
             changed = true;
           }
           continue;
@@ -6184,9 +6247,10 @@ export class RichEditor {
         this.debugLog(`table delete boundary relax key=${key} reason=empty-block`);
       }
       const next = top.nextElementSibling as HTMLElement | null;
-      if (next?.tagName.toLowerCase() === "table") {
+      const nextTable = this.resolveTopLevelTableFromBlock(next);
+      if (nextTable) {
         this.debugLog(`table delete boundary hit key=${key} side=next-table`);
-        return next as HTMLTableElement;
+        return nextTable;
       }
       this.debugLog(`table delete boundary skip key=${key} reason=no-next-table`);
       return null;
@@ -6200,12 +6264,43 @@ export class RichEditor {
       this.debugLog(`table delete boundary relax key=${key} reason=empty-block`);
     }
     const prev = top.previousElementSibling as HTMLElement | null;
-    if (prev?.tagName.toLowerCase() === "table") {
+    const prevTable = this.resolveTopLevelTableFromBlock(prev);
+    if (prevTable) {
       this.debugLog(`table delete boundary hit key=${key} side=prev-table`);
-      return prev as HTMLTableElement;
+      return prevTable;
     }
     this.debugLog(`table delete boundary skip key=${key} reason=no-prev-table`);
     return null;
+  }
+
+  private resolveTopLevelTableFromBlock(node: HTMLElement | null): HTMLTableElement | null {
+    if (!node) {
+      return null;
+    }
+
+    if (node.tagName.toLowerCase() === "table") {
+      return node as HTMLTableElement;
+    }
+
+    if (node.tagName.toLowerCase() === "div" && node.classList.contains("re-table-wrap")) {
+      return node.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+    }
+
+    return null;
+  }
+
+  private getTableDeleteHost(table: HTMLTableElement): HTMLElement {
+    const parent = table.parentElement;
+    if (
+      parent
+      && parent.tagName.toLowerCase() === "div"
+      && parent.classList.contains("re-table-wrap")
+      && parent.parentElement === this.editor
+    ) {
+      return parent;
+    }
+
+    return table;
   }
 
   private getCollapsedEditorRange(): Range | null {
@@ -6329,16 +6424,17 @@ export class RichEditor {
   }
 
   private deleteSpecificTable(table: HTMLTableElement, source: "inside-cell" | "outside-table-boundary"): void {
+    const removeTarget = this.getTableDeleteHost(table);
     const placeholder = document.createElement("p");
     placeholder.innerHTML = "<br>";
-    table.insertAdjacentElement("afterend", placeholder);
+    removeTarget.insertAdjacentElement("afterend", placeholder);
 
     this.clearSelectedCells();
     this.keyboardAnchorCell = null;
     this.keyboardFocusCell = null;
     this.lastTableAnchorCell = null;
     this.setActiveTableElement(null);
-    table.remove();
+    removeTarget.remove();
 
     const selection = window.getSelection();
     if (selection) {
@@ -6387,6 +6483,27 @@ export class RichEditor {
     }
 
     const tableHost = this.getTopLevelEditorChild(table) ?? table;
+
+    const adjacentTable = this.resolveAdjacentTopLevelTable(
+      direction === "up" ? tableHost.previousSibling : tableHost.nextSibling,
+    );
+    if (adjacentTable) {
+      const targetCell = direction === "up"
+        ? this.getLastTableCell(adjacentTable)
+        : this.getFirstTableCell(adjacentTable);
+      if (targetCell) {
+        this.clearSelectedCells();
+        this.keyboardAnchorCell = targetCell;
+        this.keyboardFocusCell = targetCell;
+        this.lastTableAnchorCell = targetCell;
+        this.setActiveTableElement(adjacentTable);
+        this.placeCaretInCell(targetCell, direction === "up" ? "end" : "start");
+        this.captureSelection();
+        this.updateToolbarState();
+        this.debugLog(`table nav adjacent-table direction=${direction} target=${this.describeCell(targetCell)}`);
+        return true;
+      }
+    }
 
     const resolveTargetFromNode = (node: Node): { element: HTMLElement | null; textNode: Text | null } => {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -6584,6 +6701,27 @@ export class RichEditor {
     }
 
     const tableHost = this.getTopLevelEditorChild(table) ?? table;
+
+    const adjacentTable = this.resolveAdjacentTopLevelTable(
+      side === "after" ? tableHost.nextSibling : tableHost.previousSibling,
+    );
+    if (adjacentTable) {
+      const targetCell = side === "after"
+        ? this.getFirstTableCell(adjacentTable)
+        : this.getLastTableCell(adjacentTable);
+      if (targetCell) {
+        this.clearSelectedCells();
+        this.keyboardAnchorCell = targetCell;
+        this.keyboardFocusCell = targetCell;
+        this.lastTableAnchorCell = targetCell;
+        this.setActiveTableElement(adjacentTable);
+        this.placeCaretInCell(targetCell, side === "after" ? "start" : "end");
+        this.captureSelection();
+        this.updateToolbarState();
+        this.debugLog(`table nav adjacent-table direction=${side === "after" ? "right" : "left"} target=${this.describeCell(targetCell)}`);
+        return true;
+      }
+    }
     const pickAdjacentEditableBlock = (node: Node | null): HTMLElement | null => {
       let probe = node;
       while (probe) {

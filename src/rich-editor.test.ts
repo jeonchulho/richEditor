@@ -104,6 +104,38 @@ describe("RichEditor mention enter handling", () => {
     const firstCandidate = root.querySelector('[data-role="mentionList"] .re-mention-item') as HTMLButtonElement | null;
     expect(firstCandidate?.textContent).toContain("@김민지");
   });
+
+  it("marks next input to skip normalization when pressing Enter", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      consumeSkipNormalizeOnNextInput: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Enter",
+    }));
+
+    expect(editorInstance.consumeSkipNormalizeOnNextInput()).toBe(true);
+  });
 });
 
 describe("RichEditor IME autosave", () => {
@@ -303,8 +335,10 @@ describe("RichEditor table insertion trailing paragraph", () => {
     editorInstance.insertTable(2, 2);
 
     const paragraph = editor.querySelector(":scope > p") as HTMLParagraphElement | null;
-    const table = editor.querySelector(":scope > table") as HTMLTableElement | null;
+    const tableWrap = editor.querySelector(":scope > div.re-table-wrap") as HTMLDivElement | null;
+    const table = tableWrap?.querySelector(":scope > table") as HTMLTableElement | null;
     expect(paragraph).not.toBeNull();
+    expect(tableWrap).not.toBeNull();
     expect(table).not.toBeNull();
     expect(paragraph?.contains(table as Node)).toBe(false);
   });
@@ -485,7 +519,7 @@ describe("RichEditor table structure normalization", () => {
     expect(paragraphs[0]?.innerHTML.toLowerCase()).toContain("br");
   });
 
-  it("inserts table inside div when caret is inside a top-level div", () => {
+  it("wraps inserted table with div.re-table-wrap", () => {
     const root = document.createElement("div");
     document.body.appendChild(root);
 
@@ -494,10 +528,8 @@ describe("RichEditor table structure normalization", () => {
     };
 
     const editor = root.querySelector(".re-editor") as HTMLDivElement;
-    editor.innerHTML = '<div id="container"><p>some text</p></div>';
-
-    const div = editor.querySelector("#container") as HTMLDivElement;
-    const paragraph = div.querySelector("p") as HTMLParagraphElement;
+    editor.innerHTML = "<p>some text</p>";
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
     
     const selection = window.getSelection();
     if (!selection) {
@@ -513,12 +545,393 @@ describe("RichEditor table structure normalization", () => {
 
     editorInstance.insertTable(2, 3);
 
-    // normalizeTopLevelParagraphs가 nested div를 평탄화하므로
-    // 테이블과 p가 모두 editor 최상단에 위치한다
-    const allTables = editor.querySelectorAll(":scope > table");
-    const allParagraphs = editor.querySelectorAll(":scope > p");
-    
-    expect(allTables.length).toBeGreaterThan(0);
-    expect(allParagraphs.length).toBeGreaterThan(0);
+    const wrapper = editor.querySelector(":scope > div.re-table-wrap") as HTMLDivElement | null;
+    const wrappedTable = wrapper?.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+
+    expect(wrapper).not.toBeNull();
+    expect(wrappedTable).not.toBeNull();
+  });
+
+  it("removes table wrapper when deleting a table", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      deleteTable: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap">',
+      '<table class="re-table"><tr><td contenteditable="true">A</td></tr></table>',
+      "</div>",
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.deleteTable();
+
+    expect(editor.querySelector(":scope > div.re-table-wrap")).toBeNull();
+    expect(editor.querySelector(":scope > table")).toBeNull();
+    const topLevelParagraphs = editor.querySelectorAll(":scope > p");
+    expect(topLevelParagraphs.length).toBeGreaterThan(0);
+  });
+
+  it("moves caret outside wrapped table on ArrowDown at last row", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap">',
+      '<table class="re-table"><tr><td contenteditable="true">A</td></tr></table>',
+      "</div>",
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowDown",
+    }));
+
+    const afterSelection = window.getSelection();
+    const afterRange = afterSelection?.rangeCount ? afterSelection.getRangeAt(0) : null;
+    const container = afterRange?.startContainer;
+    const containerElement = container instanceof HTMLElement ? container : container?.parentElement ?? null;
+
+    expect(containerElement?.closest("table")).toBeNull();
+    expect(editor.contains(containerElement as Node)).toBe(true);
+  });
+
+  it("moves caret outside wrapped table on ArrowRight at row end", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap">',
+      '<table class="re-table"><tr><td contenteditable="true">A</td></tr></table>',
+      "</div>",
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+    }));
+
+    const afterSelection = window.getSelection();
+    const afterRange = afterSelection?.rangeCount ? afterSelection.getRangeAt(0) : null;
+    const container = afterRange?.startContainer;
+    const containerElement = container instanceof HTMLElement ? container : container?.parentElement ?? null;
+
+    expect(containerElement?.closest("table")).toBeNull();
+    expect(editor.contains(containerElement as Node)).toBe(true);
+  });
+
+  it("deletes wrapped table with Delete at previous paragraph boundary", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      "<p><br></p>",
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const firstParagraph = editor.querySelector(":scope > p") as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(firstParagraph);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Delete",
+    }));
+
+    expect(editor.querySelector(":scope > div.re-table-wrap")).toBeNull();
+    expect(editor.querySelector(":scope > table")).toBeNull();
+  });
+
+  it("deletes wrapped table with Backspace at next paragraph boundary", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      "<p><br></p>",
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const paragraphs = editor.querySelectorAll(":scope > p");
+    const lastParagraph = paragraphs[paragraphs.length - 1] as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(lastParagraph);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Backspace",
+    }));
+
+    expect(editor.querySelector(":scope > div.re-table-wrap")).toBeNull();
+    expect(editor.querySelector(":scope > table")).toBeNull();
+  });
+
+  it("moves to previous table on ArrowUp from second table first cell", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T1</td></tr><tr><td contenteditable="true">T1B</td></tr></table></div>',
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T2</td></tr><tr><td contenteditable="true">T2B</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    const firstTable = wrappers[0]?.querySelector("table") as HTMLTableElement;
+    const secondTable = wrappers[1]?.querySelector("table") as HTMLTableElement;
+    const secondTableFirstCellText = secondTable.querySelector("tr:first-child td")?.firstChild;
+    if (!(secondTableFirstCellText instanceof Text)) {
+      throw new Error("second table first cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(secondTableFirstCellText, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowUp",
+    }));
+
+    const afterRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const afterElement = afterRange?.startContainer instanceof HTMLElement
+      ? afterRange.startContainer
+      : afterRange?.startContainer.parentElement ?? null;
+    expect(afterElement?.closest("table")).toBe(firstTable);
+  });
+
+  it("moves to next table on ArrowDown from first table last cell", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T1</td></tr><tr><td contenteditable="true">T1B</td></tr></table></div>',
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T2</td></tr><tr><td contenteditable="true">T2B</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    const firstTable = wrappers[0]?.querySelector("table") as HTMLTableElement;
+    const secondTable = wrappers[1]?.querySelector("table") as HTMLTableElement;
+    const firstTableLastCellText = firstTable.querySelector("tr:last-child td")?.firstChild;
+    if (!(firstTableLastCellText instanceof Text)) {
+      throw new Error("first table last cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(firstTableLastCellText, firstTableLastCellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowDown",
+    }));
+
+    const afterRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const afterElement = afterRange?.startContainer instanceof HTMLElement
+      ? afterRange.startContainer
+      : afterRange?.startContainer.parentElement ?? null;
+    expect(afterElement?.closest("table")).toBe(secondTable);
+  });
+
+  it("moves to previous table on ArrowLeft from second table first cell", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T1</td></tr><tr><td contenteditable="true">T1B</td></tr></table></div>',
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T2</td></tr><tr><td contenteditable="true">T2B</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    const firstTable = wrappers[0]?.querySelector("table") as HTMLTableElement;
+    const secondTable = wrappers[1]?.querySelector("table") as HTMLTableElement;
+    const secondTableFirstCellText = secondTable.querySelector("tr:first-child td")?.firstChild;
+    if (!(secondTableFirstCellText instanceof Text)) {
+      throw new Error("second table first cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(secondTableFirstCellText, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowLeft",
+    }));
+
+    const afterRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const afterElement = afterRange?.startContainer instanceof HTMLElement
+      ? afterRange.startContainer
+      : afterRange?.startContainer.parentElement ?? null;
+    expect(afterElement?.closest("table")).toBe(firstTable);
+  });
+
+  it("moves to next table on ArrowRight from first table last cell", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T1</td></tr><tr><td contenteditable="true">T1B</td></tr></table></div>',
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">T2</td></tr><tr><td contenteditable="true">T2B</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    const firstTable = wrappers[0]?.querySelector("table") as HTMLTableElement;
+    const secondTable = wrappers[1]?.querySelector("table") as HTMLTableElement;
+    const firstTableLastCellText = firstTable.querySelector("tr:last-child td")?.firstChild;
+    if (!(firstTableLastCellText instanceof Text)) {
+      throw new Error("first table last cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(firstTableLastCellText, firstTableLastCellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+    }));
+
+    const afterRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const afterElement = afterRange?.startContainer instanceof HTMLElement
+      ? afterRange.startContainer
+      : afterRange?.startContainer.parentElement ?? null;
+    expect(afterElement?.closest("table")).toBe(secondTable);
   });
 });
