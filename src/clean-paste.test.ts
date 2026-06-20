@@ -22,6 +22,21 @@ describe("cleanPasteHtml", () => {
     expect(clean).toContain("<th>A</th>");
     expect(clean).toContain("<td>B</td>");
   });
+
+  it("keeps common table attributes used by external HTML", () => {
+    const dirty = '<table class="ext-table" width="80%" border="1" cellpadding="6" cellspacing="2" align="center" bgcolor="#eeeeee"><tr><td align="right" valign="middle" nowrap>V</td></tr></table>';
+    const clean = cleanPasteHtml(dirty);
+
+    expect(clean).toContain('class="ext-table"');
+    expect(clean).toContain('width="80%"');
+    expect(clean).toContain('border="1"');
+    expect(clean).toContain('cellpadding="6"');
+    expect(clean).toContain('cellspacing="2"');
+    expect(clean).toContain('align="center"');
+    expect(clean).toContain('bgcolor="#eeeeee"');
+    expect(clean).toContain('valign="middle"');
+    expect(clean).toContain("nowrap");
+  });
 });
 
 // 텍스트 정제 로직 검증:

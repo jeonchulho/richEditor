@@ -33,6 +33,7 @@ const ALLOWED_TAGS = [
 // 붙여넣기 HTML에서 허용할 속성 목록.
 // 스타일/링크/이미지/셀 span 속성을 유지하기 위해 제한적으로 허용한다.
 const ALLOWED_ATTR = [
+  "class",
   "style",
   "src",
   "alt",
@@ -40,6 +41,15 @@ const ALLOWED_ATTR = [
   "colspan",
   "width",
   "height",
+  "align",
+  "valign",
+  "cellpadding",
+  "cellspacing",
+  "border",
+  "bgcolor",
+  "bordercolor",
+  "nowrap",
+  "scope",
   "href",
   "target",
   "rel",

@@ -77,6 +77,8 @@ export function addRow(ctx: any, side: "before" | "after" = "after"): void {
     return;
   }
 
+  const beforeHtml = ctx.editor?.innerHTML ?? "";
+
   const tableData = buildTableMatrix(table);
   const anchor = tableData.anchors.get(cell) as CellAnchor | undefined;
   if (!anchor) {
@@ -125,9 +127,21 @@ export function addRow(ctx: any, side: "before" | "after" = "after"): void {
 
   const refRow = table.rows[insertRowIndex] ?? null;
   if (refRow) {
-    table.insertBefore(newRow, refRow);
+    const refParent = refRow.parentElement;
+    if (refParent) {
+      refParent.insertBefore(newRow, refRow);
+    } else {
+      table.appendChild(newRow);
+    }
   } else {
-    table.appendChild(newRow);
+    const fallbackSection = (row.parentElement instanceof HTMLTableSectionElement)
+      ? row.parentElement
+      : (table.tBodies[0] ?? null);
+    if (fallbackSection) {
+      fallbackSection.appendChild(newRow);
+    } else {
+      table.appendChild(newRow);
+    }
   }
 
   if (firstInsertedCell) {
@@ -136,6 +150,7 @@ export function addRow(ctx: any, side: "before" | "after" = "after"): void {
 
   ctx.debugLog?.(`table op addRow apply side=${side} insertRow=${insertRowIndex} inserted=${insertedCount} expanded=${expandedRowSpanCells.size}`);
   ctx.enableTableColumnResize(table);
+  ctx.pushMergeUndoSnapshot?.(beforeHtml);
   ctx.debouncedSave();
 }
 
@@ -156,6 +171,8 @@ export function addCol(ctx: any, side: "before" | "after" = "after"): void {
   if (!table) {
     return;
   }
+
+  const beforeHtml = ctx.editor?.innerHTML ?? "";
 
   const tableData = buildTableMatrix(table);
   const anchor = tableData.anchors.get(cell) as CellAnchor | undefined;
@@ -222,6 +239,7 @@ export function addCol(ctx: any, side: "before" | "after" = "after"): void {
 
   ctx.debugLog?.(`table op addCol apply side=${side} insertCol=${insertColIndex} inserted=${insertedCount} expanded=${expandedColSpanCells.size}`);
   ctx.enableTableColumnResize(table);
+  ctx.pushMergeUndoSnapshot?.(beforeHtml);
   ctx.debouncedSave();
 }
 
@@ -242,6 +260,8 @@ export function deleteRow(ctx: any): void {
   if (!row || !table) {
     return;
   }
+
+  const beforeHtml = ctx.editor?.innerHTML ?? "";
 
   const tableData = buildTableMatrix(table);
   const anchor = tableData.anchors.get(cell) as CellAnchor | undefined;
@@ -292,6 +312,7 @@ export function deleteRow(ctx: any): void {
     p.innerHTML = "<br>";
     ctx.insertNodeAtCaret(p);
     ctx.debugLog?.(`table op deleteRow apply targetRow=${targetRow} result=table-removed expandedAbove=${expandedFromAbove.length} movedDown=${movedDown.length}`);
+    ctx.pushMergeUndoSnapshot?.(beforeHtml);
     ctx.debouncedSave();
     return;
   }
@@ -304,6 +325,7 @@ export function deleteRow(ctx: any): void {
   }
 
   ctx.debugLog?.(`table op deleteRow apply targetRow=${targetRow} expandedAbove=${expandedFromAbove.length} movedDown=${movedDown.length} fallback=${fallbackCell ? ctx.describeCell(fallbackCell) : "none"}`);
+  ctx.pushMergeUndoSnapshot?.(beforeHtml);
   ctx.debouncedSave();
 }
 
@@ -324,6 +346,8 @@ export function deleteCol(ctx: any): void {
   if (!row || !table) {
     return;
   }
+
+  const beforeHtml = ctx.editor?.innerHTML ?? "";
 
   const tableData = buildTableMatrix(table);
   const anchor = tableData.anchors.get(cell) as CellAnchor | undefined;
@@ -362,6 +386,7 @@ export function deleteCol(ctx: any): void {
     p.innerHTML = "<br>";
     ctx.insertNodeAtCaret(p);
     ctx.debugLog?.(`table op deleteCol apply targetCol=${targetCol} result=table-removed removed=${toRemove.length}`);
+    ctx.pushMergeUndoSnapshot?.(beforeHtml);
     ctx.debouncedSave();
     return;
   }
@@ -379,6 +404,7 @@ export function deleteCol(ctx: any): void {
     return span > 1 && targetCol >= pos.col && targetCol <= endCol;
   }).length;
   ctx.debugLog?.(`table op deleteCol apply targetCol=${targetCol} reducedSpan=${reducedSpanCount} removed=${toRemove.length} fallback=${fallbackCell ? ctx.describeCell(fallbackCell) : "none"}`);
+  ctx.pushMergeUndoSnapshot?.(beforeHtml);
   ctx.debouncedSave();
 }
 
@@ -398,6 +424,8 @@ export function deleteTable(ctx: any): void {
   if (!table) {
     return;
   }
+
+  const beforeHtml = ctx.editor?.innerHTML ?? "";
 
   const wrapper = table.parentElement instanceof HTMLDivElement
     && table.parentElement.classList.contains("re-table-wrap")
@@ -429,6 +457,7 @@ export function deleteTable(ctx: any): void {
 
   ctx.showSaveStatus("Table deleted");
   ctx.debugLog?.("table op deleteTable apply");
+  ctx.pushMergeUndoSnapshot?.(beforeHtml);
   ctx.debouncedSave();
 }
 

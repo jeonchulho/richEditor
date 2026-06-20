@@ -32,7 +32,12 @@ import {
   renderTableSizeGrid,
   updateTableSizeGridPreview,
 } from "./rich-editor/components/popup-components";
-import { DEFAULT_AUTOSAVE_DELAY, DEFAULT_STORAGE_KEY } from "./rich-editor/constants";
+import {
+  DEFAULT_AUTOSAVE_DELAY,
+  DEFAULT_STORAGE_KEY,
+  STANDARD_COLOR_SWATCHES,
+  THEME_COLOR_SWATCHES,
+} from "./rich-editor/constants";
 import { INITIAL_EDITOR_HTML, RICH_EDITOR_TEMPLATE } from "./rich-editor/template";
 import type {
   CellAnchor,
@@ -42,7 +47,6 @@ import type {
   FormattingRole,
   HeaderPasteMode,
   InlineCommand,
-  LineHeightOption,
   ListCommand,
   MentionOptions,
   RichEditorOptions,
@@ -96,9 +100,14 @@ export class RichEditor {
   private toolbar!: HTMLDivElement;
   private editor!: HTMLDivElement;
   private colorPalette!: HTMLDivElement;
-  private colorPaletteButton!: HTMLButtonElement;
+  private textColorButton!: HTMLButtonElement;
+  private bgColorButton!: HTMLButtonElement;
+  private colorPaletteAnchorButton: HTMLButtonElement | null = null;
+  private colorPaletteOwner: "toolbar" | "formControlLabelBg" | "formControlValueColor" = "toolbar";
   private textColorChip!: HTMLSpanElement;
   private bgColorChip!: HTMLSpanElement;
+  private readonly recentTextColors: string[] = [];
+  private readonly recentBgColors: string[] = [];
   private emojiPicker!: HTMLDivElement;
   private emojiButton!: HTMLButtonElement;
   private tableInsertButton!: HTMLButtonElement;
@@ -106,6 +115,49 @@ export class RichEditor {
   private tableSizeInfo!: HTMLDivElement;
   private mentionPopup!: HTMLDivElement;
   private mentionList!: HTMLDivElement;
+  private formControlPropsDialog!: HTMLDivElement;
+  private formControlPropsTitle!: HTMLDivElement;
+  private formControlPropsBasicSection!: HTMLElement;
+  private formControlPropsLabelStyleSection!: HTMLElement;
+  private formControlPropsTextSection!: HTMLElement;
+  private formControlPropsChoiceSection!: HTMLElement;
+  private formControlPropsLabelInput!: HTMLInputElement;
+  private formControlPropsLabelFontNameSelect!: HTMLSelectElement;
+  private formControlPropsLabelFontSizeSelect!: HTMLSelectElement;
+  private formControlLabelColorChip!: HTMLSpanElement;
+  private formControlLabelBgColorChip!: HTMLSpanElement;
+  private formControlValueColorChip!: HTMLSpanElement;
+  private formControlColorPalette!: HTMLDivElement;
+  private formControlColorAutomaticChip!: HTMLSpanElement;
+  private formControlColorThemeColorGrid!: HTMLDivElement;
+  private formControlColorStandardColorGrid!: HTMLDivElement;
+  private formControlColorRecentColorGrid!: HTMLDivElement;
+  private formControlColorMoreColorInput!: HTMLInputElement;
+  private formControlPropsLabelFontColorInput!: HTMLInputElement;
+  private formControlPropsLabelBgColorInput!: HTMLInputElement;
+  private formControlPropsLabelFontColorField!: HTMLElement;
+  private formControlPropsLabelBgColorField!: HTMLElement;
+  private formControlPropsLabelPositionField!: HTMLElement;
+  private formControlPropsLabelPositionInput!: HTMLInputElement;
+  private formControlPropsLabelWidthInput!: HTMLInputElement;
+  private formControlPropsLabelAlignField!: HTMLElement;
+  private formControlPropsLabelAlignInput!: HTMLInputElement;
+  private formControlPropsValueFontField!: HTMLElement;
+  private formControlPropsValueFontNameSelect!: HTMLSelectElement;
+  private formControlPropsValueFontSizeSelect!: HTMLSelectElement;
+  private formControlPropsValueFontColorField!: HTMLElement;
+  private formControlPropsValueFontColorInput!: HTMLInputElement;
+  private formControlPropsBorderScopeField!: HTMLElement;
+  private formControlPropsBorderScopeInput!: HTMLInputElement;
+  private formControlPropsPlaceholderField!: HTMLElement;
+  private formControlPropsPlaceholderInput!: HTMLInputElement;
+  private formControlPropsValueField!: HTMLElement;
+  private formControlPropsValueInput!: HTMLInputElement;
+  private formControlPropsCheckedField!: HTMLElement;
+  private formControlPropsCheckedInput!: HTMLInputElement;
+  private formControlPropsDisabledField!: HTMLElement;
+  private formControlPropsDisabledInput!: HTMLInputElement;
+  private readonly formControlPropsHistory = new Map<string, { states: string[]; index: number }>();
   private tableContextMenu!: HTMLDivElement;
   private tablePropsBackdrop!: HTMLDivElement;
   private tablePropsDialog!: HTMLDivElement;
@@ -126,8 +178,12 @@ export class RichEditor {
   private tablePropsBorderColorPicker!: HTMLInputElement;
   private tablePropsBgColorInput!: HTMLInputElement;
   private tablePropsBgColorPicker!: HTMLInputElement;
+  private tablePropsMarginInput!: HTMLInputElement;
+  private tablePropsPaddingInput!: HTMLInputElement;
   private tablePropsAlignSelect!: HTMLSelectElement;
   private tablePropsRowHeightInput!: HTMLInputElement;
+  private tablePropsRowPaddingInput!: HTMLInputElement;
+  private tablePropsRowMarginInput!: HTMLInputElement;
   private tablePropsRowBgColorInput!: HTMLInputElement;
   private tablePropsRowBgColorPicker!: HTMLInputElement;
   private tablePropsRowVAlignSelect!: HTMLSelectElement;
@@ -139,6 +195,7 @@ export class RichEditor {
   private tablePropsCellBorderLeftInput!: HTMLInputElement;
   private tablePropsCellPaddingInput!: HTMLInputElement;
   private tablePropsCellPaddingRange!: HTMLInputElement;
+  private tablePropsCellMarginInput!: HTMLInputElement;
   private tablePropsCellBorderColorInput!: HTMLInputElement;
   private tablePropsCellBorderColorPicker!: HTMLInputElement;
   private tablePropsCellTextColorInput!: HTMLInputElement;
@@ -149,6 +206,8 @@ export class RichEditor {
   private tablePropsCellVAlignSelect!: HTMLSelectElement;
   private tablePropsCellWrapSelect!: HTMLSelectElement;
   private tablePropsColWidthInput!: HTMLInputElement;
+  private tablePropsColPaddingInput!: HTMLInputElement;
+  private tablePropsColMarginInput!: HTMLInputElement;
   private tablePropsColBgColorInput!: HTMLInputElement;
   private tablePropsColBgColorPicker!: HTMLInputElement;
   private tablePropsColAlignSelect!: HTMLSelectElement;
@@ -159,6 +218,7 @@ export class RichEditor {
   private tablePropsSessionCells: HTMLTableCellElement[] = [];
   private tablePropsSessionCol = -1;
   private readonly tablePropsSnapshot = new Map<HTMLElement, string | null>();
+  private readonly tablePropsInitialFieldValues = new Map<string, string>();
   private readonly recentTablePropColors: string[] = [];
   private activeTablePropsColorField: "tableBorder" | "tableBg" | "rowBg" | "cellBorder" | "cellText" | "cellBg" | "colBg" = "tableBg";
   private tablePropsDialogCollapsed = false;
@@ -171,8 +231,8 @@ export class RichEditor {
   private flashIntensitySelect!: HTMLSelectElement;
   private headerPasteModeSelect!: HTMLSelectElement;
   private mergeButton!: HTMLButtonElement;
-  private mergePreviewBadge!: HTMLSpanElement;
-  private mergeRangeBadge!: HTMLSpanElement;
+  private mergePreviewBadge: HTMLSpanElement | null = null;
+  private mergeRangeBadge: HTMLSpanElement | null = null;
   private imageInput!: HTMLInputElement;
   private saveStatus!: HTMLSpanElement;
   private debugToggleButton!: HTMLButtonElement;
@@ -186,6 +246,7 @@ export class RichEditor {
   private isRestoringSelection = false;
   private isToolbarInteracting = false;
   private skipNormalizeOnNextInput = false;
+  private pendingEnterAfterFormControlExit = false;
   private debugSeq = 0;
   private readonly debouncedSave: () => void;
   private readonly selectedCells = new Set<HTMLTableCellElement>();
@@ -199,6 +260,7 @@ export class RichEditor {
   private keyboardFocusCell: HTMLTableCellElement | null = null;
   private lastTableAnchorCell: HTMLTableCellElement | null = null;
   private activeImageWrapper: HTMLElement | null = null;
+  private activeFormControlWrapper: HTMLElement | null = null;
   private activeTableElement: HTMLTableElement | null = null;
   private pendingExpandedMerge = false;
   private mentionActiveIndex = 0;
@@ -211,6 +273,9 @@ export class RichEditor {
   private mentionTrigger = DEFAULT_MENTION_TRIGGER;
   private mentionMaxResults = DEFAULT_MENTION_MAX_RESULTS;
   private headerPasteMode: HeaderPasteMode = "preserveTarget";
+  private formControlPropsTarget: HTMLElement | null = null;
+  private formControlColorTarget: "label" | "value" | "labelBg" = "label";
+  private readonly recentFormControlColors: string[] = [];
   private readonly uiPrefsKey: string;
 
   constructor(root: HTMLElement, options: RichEditorOptions = {}) {
@@ -301,7 +366,9 @@ export class RichEditor {
     this.toolbar = this.root.querySelector(".re-toolbar") as HTMLDivElement;
     this.editor = this.root.querySelector(".re-editor") as HTMLDivElement;
     this.colorPalette = this.root.querySelector('[data-role="colorPalette"]') as HTMLDivElement;
-    this.colorPaletteButton = this.root.querySelector('[data-action="colorPalette"]') as HTMLButtonElement;
+    this.textColorButton = this.root.querySelector('[data-action="textColorPalette"]') as HTMLButtonElement;
+    this.bgColorButton = this.root.querySelector('[data-action="bgColorPalette"]') as HTMLButtonElement;
+    this.colorPaletteAnchorButton = this.textColorButton;
     this.textColorChip = this.root.querySelector('[data-role="textColorChip"]') as HTMLSpanElement;
     this.bgColorChip = this.root.querySelector('[data-role="bgColorChip"]') as HTMLSpanElement;
     this.emojiPicker = this.root.querySelector(".re-emoji-picker") as HTMLDivElement;
@@ -311,6 +378,48 @@ export class RichEditor {
     this.tableSizeInfo = this.root.querySelector('[data-role="tableSizeInfo"]') as HTMLDivElement;
     this.mentionPopup = this.root.querySelector('[data-role="mentionPopup"]') as HTMLDivElement;
     this.mentionList = this.root.querySelector('[data-role="mentionList"]') as HTMLDivElement;
+    this.formControlPropsDialog = this.root.querySelector('[data-role="formControlPropsDialog"]') as HTMLDivElement;
+    this.formControlPropsTitle = this.root.querySelector('[data-role="formControlPropsTitle"]') as HTMLDivElement;
+    this.formControlPropsBasicSection = this.root.querySelector('[data-role="formControlPropsBasicSection"]') as HTMLElement;
+    this.formControlPropsLabelStyleSection = this.root.querySelector('[data-role="formControlPropsLabelStyleSection"]') as HTMLElement;
+    this.formControlPropsTextSection = this.root.querySelector('[data-role="formControlPropsTextSection"]') as HTMLElement;
+    this.formControlPropsChoiceSection = this.root.querySelector('[data-role="formControlPropsChoiceSection"]') as HTMLElement;
+    this.formControlPropsLabelInput = this.root.querySelector('[data-role="formControlPropsLabel"]') as HTMLInputElement;
+    this.formControlPropsLabelFontNameSelect = this.root.querySelector('[data-role="formControlPropsLabelFontName"]') as HTMLSelectElement;
+    this.formControlPropsLabelFontSizeSelect = this.root.querySelector('[data-role="formControlPropsLabelFontSize"]') as HTMLSelectElement;
+    this.formControlLabelColorChip = this.root.querySelector('[data-role="formControlLabelColorChip"]') as HTMLSpanElement;
+    this.formControlLabelBgColorChip = this.root.querySelector('[data-role="formControlLabelBgColorChip"]') as HTMLSpanElement;
+    this.formControlValueColorChip = this.root.querySelector('[data-role="formControlValueColorChip"]') as HTMLSpanElement;
+    this.formControlColorPalette = this.root.querySelector('[data-role="formControlColorPalette"]') as HTMLDivElement;
+    this.formControlColorAutomaticChip = this.root.querySelector('[data-role="formControlColorAutomaticChip"]') as HTMLSpanElement;
+    this.formControlColorThemeColorGrid = this.root.querySelector('[data-role="formControlColorThemeColorGrid"]') as HTMLDivElement;
+    this.formControlColorStandardColorGrid = this.root.querySelector('[data-role="formControlColorStandardColorGrid"]') as HTMLDivElement;
+    this.formControlColorRecentColorGrid = this.root.querySelector('[data-role="formControlColorRecentColorGrid"]') as HTMLDivElement;
+    this.formControlColorMoreColorInput = this.root.querySelector('[data-role="formControlColorMoreColorInput"]') as HTMLInputElement;
+    this.formControlPropsLabelFontColorInput = this.root.querySelector('[data-role="formControlPropsLabelFontColor"]') as HTMLInputElement;
+    this.formControlPropsLabelBgColorInput = this.root.querySelector('[data-role="formControlPropsLabelBgColor"]') as HTMLInputElement;
+    this.formControlPropsLabelFontColorField = this.root.querySelector('[data-role="formControlPropsLabelFontColorField"]') as HTMLElement;
+    this.formControlPropsLabelBgColorField = this.root.querySelector('[data-role="formControlPropsLabelBgColorField"]') as HTMLElement;
+    this.formControlPropsLabelPositionField = this.root.querySelector('[data-role="formControlPropsLabelPositionField"]') as HTMLElement;
+    this.formControlPropsLabelPositionInput = this.root.querySelector('[data-role="formControlPropsLabelPosition"]') as HTMLInputElement;
+    this.formControlPropsLabelWidthInput = this.root.querySelector('[data-role="formControlPropsLabelWidth"]') as HTMLInputElement;
+    this.formControlPropsLabelAlignField = this.root.querySelector('[data-role="formControlPropsLabelAlignField"]') as HTMLElement;
+    this.formControlPropsLabelAlignInput = this.root.querySelector('[data-role="formControlPropsLabelAlign"]') as HTMLInputElement;
+    this.formControlPropsValueFontField = this.root.querySelector('[data-role="formControlPropsValueFontField"]') as HTMLElement;
+    this.formControlPropsValueFontNameSelect = this.root.querySelector('[data-role="formControlPropsValueFontName"]') as HTMLSelectElement;
+    this.formControlPropsValueFontSizeSelect = this.root.querySelector('[data-role="formControlPropsValueFontSize"]') as HTMLSelectElement;
+    this.formControlPropsValueFontColorField = this.root.querySelector('[data-role="formControlPropsValueFontColorField"]') as HTMLElement;
+    this.formControlPropsValueFontColorInput = this.root.querySelector('[data-role="formControlPropsValueFontColor"]') as HTMLInputElement;
+    this.formControlPropsBorderScopeField = this.root.querySelector('[data-role="formControlPropsBorderScopeField"]') as HTMLElement;
+    this.formControlPropsBorderScopeInput = this.root.querySelector('[data-role="formControlPropsBorderScope"]') as HTMLInputElement;
+    this.formControlPropsPlaceholderField = this.root.querySelector('[data-role="formControlPropsPlaceholderField"]') as HTMLElement;
+    this.formControlPropsPlaceholderInput = this.root.querySelector('[data-role="formControlPropsPlaceholder"]') as HTMLInputElement;
+    this.formControlPropsValueField = this.root.querySelector('[data-role="formControlPropsValueField"]') as HTMLElement;
+    this.formControlPropsValueInput = this.root.querySelector('[data-role="formControlPropsValue"]') as HTMLInputElement;
+    this.formControlPropsCheckedField = this.root.querySelector('[data-role="formControlPropsCheckedField"]') as HTMLElement;
+    this.formControlPropsCheckedInput = this.root.querySelector('[data-role="formControlPropsChecked"]') as HTMLInputElement;
+    this.formControlPropsDisabledField = this.root.querySelector('[data-role="formControlPropsDisabledField"]') as HTMLElement;
+    this.formControlPropsDisabledInput = this.root.querySelector('[data-role="formControlPropsDisabled"]') as HTMLInputElement;
     this.tableContextMenu = this.root.querySelector('[data-role="tableContextMenu"]') as HTMLDivElement;
     this.tablePropsBackdrop = this.root.querySelector('[data-role="tablePropsBackdrop"]') as HTMLDivElement;
     this.tablePropsDialog = this.root.querySelector('[data-role="tablePropsDialog"]') as HTMLDivElement;
@@ -331,8 +440,12 @@ export class RichEditor {
     this.tablePropsBorderColorPicker = this.root.querySelector('[data-role="tablePropsBorderColorPicker"]') as HTMLInputElement;
     this.tablePropsBgColorInput = this.root.querySelector('[data-role="tablePropsBgColor"]') as HTMLInputElement;
     this.tablePropsBgColorPicker = this.root.querySelector('[data-role="tablePropsBgColorPicker"]') as HTMLInputElement;
+    this.tablePropsMarginInput = this.root.querySelector('[data-role="tablePropsMargin"]') as HTMLInputElement;
+    this.tablePropsPaddingInput = this.root.querySelector('[data-role="tablePropsPadding"]') as HTMLInputElement;
     this.tablePropsAlignSelect = this.root.querySelector('[data-role="tablePropsAlign"]') as HTMLSelectElement;
     this.tablePropsRowHeightInput = this.root.querySelector('[data-role="tablePropsRowHeight"]') as HTMLInputElement;
+    this.tablePropsRowPaddingInput = this.root.querySelector('[data-role="tablePropsRowPadding"]') as HTMLInputElement;
+    this.tablePropsRowMarginInput = this.root.querySelector('[data-role="tablePropsRowMargin"]') as HTMLInputElement;
     this.tablePropsRowBgColorInput = this.root.querySelector('[data-role="tablePropsRowBgColor"]') as HTMLInputElement;
     this.tablePropsRowBgColorPicker = this.root.querySelector('[data-role="tablePropsRowBgColorPicker"]') as HTMLInputElement;
     this.tablePropsRowVAlignSelect = this.root.querySelector('[data-role="tablePropsRowVAlign"]') as HTMLSelectElement;
@@ -344,6 +457,7 @@ export class RichEditor {
     this.tablePropsCellBorderLeftInput = this.root.querySelector('[data-role="tablePropsCellBorderLeft"]') as HTMLInputElement;
     this.tablePropsCellPaddingInput = this.root.querySelector('[data-role="tablePropsCellPadding"]') as HTMLInputElement;
     this.tablePropsCellPaddingRange = this.root.querySelector('[data-role="tablePropsCellPaddingRange"]') as HTMLInputElement;
+    this.tablePropsCellMarginInput = this.root.querySelector('[data-role="tablePropsCellMargin"]') as HTMLInputElement;
     this.tablePropsCellBorderColorInput = this.root.querySelector('[data-role="tablePropsCellBorderColor"]') as HTMLInputElement;
     this.tablePropsCellBorderColorPicker = this.root.querySelector('[data-role="tablePropsCellBorderColorPicker"]') as HTMLInputElement;
     this.tablePropsCellTextColorInput = this.root.querySelector('[data-role="tablePropsCellTextColor"]') as HTMLInputElement;
@@ -354,6 +468,8 @@ export class RichEditor {
     this.tablePropsCellVAlignSelect = this.root.querySelector('[data-role="tablePropsCellVAlign"]') as HTMLSelectElement;
     this.tablePropsCellWrapSelect = this.root.querySelector('[data-role="tablePropsCellWrap"]') as HTMLSelectElement;
     this.tablePropsColWidthInput = this.root.querySelector('[data-role="tablePropsColWidth"]') as HTMLInputElement;
+    this.tablePropsColPaddingInput = this.root.querySelector('[data-role="tablePropsColPadding"]') as HTMLInputElement;
+    this.tablePropsColMarginInput = this.root.querySelector('[data-role="tablePropsColMargin"]') as HTMLInputElement;
     this.tablePropsColBgColorInput = this.root.querySelector('[data-role="tablePropsColBgColor"]') as HTMLInputElement;
     this.tablePropsColBgColorPicker = this.root.querySelector('[data-role="tablePropsColBgColorPicker"]') as HTMLInputElement;
     this.tablePropsColAlignSelect = this.root.querySelector('[data-role="tablePropsColAlign"]') as HTMLSelectElement;
@@ -361,8 +477,8 @@ export class RichEditor {
     this.flashIntensitySelect = this.root.querySelector('[data-role="flashIntensity"]') as HTMLSelectElement;
     this.headerPasteModeSelect = this.root.querySelector('[data-role="headerPasteMode"]') as HTMLSelectElement;
     this.mergeButton = this.root.querySelector('[data-table="mergeCells"]') as HTMLButtonElement;
-    this.mergePreviewBadge = this.root.querySelector('[data-role="mergePreviewBadge"]') as HTMLSpanElement;
-    this.mergeRangeBadge = this.root.querySelector('[data-role="mergeRangeBadge"]') as HTMLSpanElement;
+    this.mergePreviewBadge = this.root.querySelector('[data-role="mergePreviewBadge"]') as HTMLSpanElement | null;
+    this.mergeRangeBadge = this.root.querySelector('[data-role="mergeRangeBadge"]') as HTMLSpanElement | null;
     this.imageInput = this.root.querySelector('[data-role="imageInput"]') as HTMLInputElement;
     this.saveStatus = this.root.querySelector('[data-role="saveStatus"]') as HTMLSpanElement;
     this.debugToggleButton = this.root.querySelector('[data-action="toggleDebug"]') as HTMLButtonElement;
@@ -374,6 +490,7 @@ export class RichEditor {
 
     this.renderEmojiPicker();
     this.renderColorPalette();
+    this.renderFormControlColorPalette();
     this.renderTableSizePicker();
     this.renderTablePropsRecentColors();
 
@@ -521,12 +638,32 @@ export class RichEditor {
       if (borderWidth.length > 0 && !this.normalizeCssSizeInput(borderWidth)) {
         return "테두리 굵기는 숫자 또는 CSS 길이 단위로 입력하세요. 예: 1, 2px";
       }
+
+      const margin = this.tablePropsMarginInput.value.trim();
+      if (margin.length > 0 && !this.normalizeCssSpacingInput(margin, { allowAuto: true })) {
+        return "테이블 마진은 CSS 간격 형식으로 입력하세요. 예: 0 auto, 8, 8 12";
+      }
+
+      const padding = this.tablePropsPaddingInput.value.trim();
+      if (padding.length > 0 && !this.normalizeCssSpacingInput(padding)) {
+        return "테이블 패딩은 CSS 간격 형식으로 입력하세요. 예: 8, 8 12";
+      }
     }
 
     if (this.activeTablePropsMode === "row") {
       const height = this.tablePropsRowHeightInput.value.trim();
       if (height.length > 0 && !this.normalizeCssSizeInput(height)) {
         return "행 높이는 숫자 또는 CSS 길이 단위로 입력하세요. 예: 36, 40px";
+      }
+
+      const rowPadding = this.tablePropsRowPaddingInput.value.trim();
+      if (rowPadding.length > 0 && !this.normalizeCssSpacingInput(rowPadding)) {
+        return "행 패딩은 CSS 간격 형식으로 입력하세요. 예: 8, 8 12";
+      }
+
+      const rowMargin = this.tablePropsRowMarginInput.value.trim();
+      if (rowMargin.length > 0 && !this.normalizeCssSpacingInput(rowMargin, { allowAuto: true })) {
+        return "행 마진은 CSS 간격 형식으로 입력하세요. 예: 0, 4 8";
       }
     }
 
@@ -550,12 +687,27 @@ export class RichEditor {
       if (padding.length > 0 && !this.normalizeCssSizeInput(padding)) {
         return "셀 패딩은 숫자 또는 CSS 길이 단위로 입력하세요. 예: 12, 12px";
       }
+
+      const margin = this.tablePropsCellMarginInput.value.trim();
+      if (margin.length > 0 && !this.normalizeCssSpacingInput(margin, { allowAuto: true })) {
+        return "셀 마진은 CSS 간격 형식으로 입력하세요. 예: 0, 4 8";
+      }
     }
 
     if (this.activeTablePropsMode === "col") {
       const width = this.tablePropsColWidthInput.value.trim();
       if (width.length > 0 && !this.normalizeCssSizeInput(width)) {
         return "열 너비는 숫자 또는 CSS 길이 단위로 입력하세요. 예: 120, 140px";
+      }
+
+      const colPadding = this.tablePropsColPaddingInput.value.trim();
+      if (colPadding.length > 0 && !this.normalizeCssSpacingInput(colPadding)) {
+        return "열 패딩은 CSS 간격 형식으로 입력하세요. 예: 8, 8 12";
+      }
+
+      const colMargin = this.tablePropsColMarginInput.value.trim();
+      if (colMargin.length > 0 && !this.normalizeCssSpacingInput(colMargin, { allowAuto: true })) {
+        return "열 마진은 CSS 간격 형식으로 입력하세요. 예: 0, 4 8";
       }
     }
 
@@ -585,6 +737,8 @@ export class RichEditor {
         `테두리: ${this.tablePropsBorderWidthInput.value.trim() || "(유지)"}`,
         `색상: ${this.tablePropsBorderColorInput.value.trim() || "(유지)"}`,
         `배경: ${this.tablePropsBgColorInput.value.trim() || "(유지)"}`,
+        `마진: ${this.tablePropsMarginInput.value.trim() || "(유지)"}`,
+        `패딩: ${this.tablePropsPaddingInput.value.trim() || "(유지)"}`,
         `정렬: ${this.tablePropsAlignSelect.value}`,
       ];
       this.tablePropsSummary.textContent = parts.join(" · ");
@@ -594,6 +748,8 @@ export class RichEditor {
     if (this.activeTablePropsMode === "row") {
       const parts = [
         `행 높이: ${this.tablePropsRowHeightInput.value.trim() || "(유지)"}`,
+        `패딩: ${this.tablePropsRowPaddingInput.value.trim() || "(유지)"}`,
+        `마진: ${this.tablePropsRowMarginInput.value.trim() || "(유지)"}`,
         `배경: ${this.tablePropsRowBgColorInput.value.trim() || "(유지)"}`,
         `세로정렬: ${this.tablePropsRowVAlignSelect.value}`,
       ];
@@ -607,6 +763,7 @@ export class RichEditor {
         `스타일: ${this.tablePropsCellBorderStyleSelect.value}`,
         `상/우/하/좌: ${this.tablePropsCellBorderTopInput.value.trim() || "-"}/${this.tablePropsCellBorderRightInput.value.trim() || "-"}/${this.tablePropsCellBorderBottomInput.value.trim() || "-"}/${this.tablePropsCellBorderLeftInput.value.trim() || "-"}`,
         `패딩: ${this.tablePropsCellPaddingInput.value.trim() || "(유지)"}`,
+        `마진: ${this.tablePropsCellMarginInput.value.trim() || "(유지)"}`,
         `테두리색: ${this.tablePropsCellBorderColorInput.value.trim() || "(유지)"}`,
         `텍스트색: ${this.tablePropsCellTextColorInput.value.trim() || "(유지)"}`,
         `배경: ${this.tablePropsCellBgColorInput.value.trim() || "(유지)"}`,
@@ -620,6 +777,8 @@ export class RichEditor {
 
     const parts = [
       `열 너비: ${this.tablePropsColWidthInput.value.trim() || "(유지)"}`,
+      `패딩: ${this.tablePropsColPaddingInput.value.trim() || "(유지)"}`,
+      `마진: ${this.tablePropsColMarginInput.value.trim() || "(유지)"}`,
       `배경: ${this.tablePropsColBgColorInput.value.trim() || "(유지)"}`,
       `가로정렬: ${this.tablePropsColAlignSelect.value}`,
     ];
@@ -634,6 +793,25 @@ export class RichEditor {
     this.tablePropsSessionCells = [];
     this.tablePropsSessionCol = -1;
     this.tablePropsSnapshot.clear();
+    this.tablePropsInitialFieldValues.clear();
+  }
+
+  private captureTablePropsInitialValues(): void {
+    this.tablePropsInitialFieldValues.clear();
+    const fields = Array.from(this.tablePropsDialog.querySelectorAll("input[data-role],select[data-role],textarea[data-role]"));
+    for (const field of fields) {
+      const element = field as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      const role = element.getAttribute("data-role")?.trim() ?? "";
+      if (!role.startsWith("tableProps")) {
+        continue;
+      }
+      this.tablePropsInitialFieldValues.set(role, element.value ?? "");
+    }
+  }
+
+  private isTablePropsFieldChanged(role: string, value: string): boolean {
+    const before = this.tablePropsInitialFieldValues.get(role) ?? "";
+    return before !== value;
   }
 
   private getTablePropsCellTargets(cell: HTMLTableCellElement): HTMLTableCellElement[] {
@@ -706,6 +884,76 @@ export class RichEditor {
 
     if (/^\d+(\.\d+)?(px|em|rem|vh|vw)$/.test(lower)) {
       return trimmed;
+    }
+
+    return "";
+  }
+
+  private normalizeCssSpacingInput(value: string, { allowAuto = false }: { allowAuto?: boolean } = {}): string {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return "";
+    }
+
+    const parts = trimmed.split(/\s+/);
+    if (parts.length === 0 || parts.length > 4) {
+      return "";
+    }
+
+    const normalizedParts: string[] = [];
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (allowAuto && lower === "auto") {
+        normalizedParts.push("auto");
+        continue;
+      }
+
+      if (/^\d+(\.\d+)?$/.test(part)) {
+        normalizedParts.push(`${part}px`);
+        continue;
+      }
+
+      if (/^\d+(\.\d+)?(px|em|rem|vh|vw|%)$/.test(lower)) {
+        normalizedParts.push(part);
+        continue;
+      }
+
+      return "";
+    }
+
+    return normalizedParts.join(" ");
+  }
+
+  private spacingInputFromNormalized(value: string): string {
+    return value
+      .split(/\s+/)
+      .map((part) => (part.endsWith("px") ? part.slice(0, -2) : part))
+      .join(" ");
+  }
+
+  private readSpacingInputFromStyleOrAttr(
+    element: HTMLElement,
+    styleValue: string,
+    attrs: string[],
+    options: { allowAuto?: boolean } = {},
+  ): string {
+    const normalized = this.normalizeCssSpacingInput(styleValue, options);
+    if (normalized.length > 0) {
+      return this.spacingInputFromNormalized(normalized);
+    }
+
+    for (const attr of attrs) {
+      const raw = element.getAttribute(attr)?.trim() ?? "";
+      if (raw.length === 0) {
+        continue;
+      }
+      const fromAttr = this.normalizeCssSpacingInput(raw, options);
+      if (fromAttr.length > 0) {
+        return this.spacingInputFromNormalized(fromAttr);
+      }
+      if (/^\d+(\.\d+)?$/.test(raw)) {
+        return raw;
+      }
     }
 
     return "";
@@ -865,6 +1113,8 @@ export class RichEditor {
       this.tablePropsBorderWidthInput.value = "";
       this.tablePropsBorderColorInput.value = "";
       this.tablePropsBgColorInput.value = "";
+      this.tablePropsMarginInput.value = "";
+      this.tablePropsPaddingInput.value = "";
       this.tablePropsAlignSelect.value = "left";
       this.syncTablePropsColorPair("tableBorder", "text");
       this.syncTablePropsColorPair("tableBg", "text");
@@ -872,6 +1122,8 @@ export class RichEditor {
 
     if (this.activeTablePropsMode === "row") {
       this.tablePropsRowHeightInput.value = "";
+      this.tablePropsRowPaddingInput.value = "";
+      this.tablePropsRowMarginInput.value = "";
       this.tablePropsRowBgColorInput.value = "";
       this.tablePropsRowVAlignSelect.value = "top";
       this.syncTablePropsColorPair("rowBg", "text");
@@ -886,6 +1138,7 @@ export class RichEditor {
       this.tablePropsCellBorderLeftInput.value = "";
       this.tablePropsCellPaddingInput.value = "";
       this.tablePropsCellPaddingRange.value = "12";
+      this.tablePropsCellMarginInput.value = "";
       this.tablePropsCellBorderColorInput.value = "";
       this.tablePropsCellTextColorInput.value = "";
       this.tablePropsCellBgColorInput.value = "";
@@ -899,6 +1152,8 @@ export class RichEditor {
 
     if (this.activeTablePropsMode === "col") {
       this.tablePropsColWidthInput.value = "";
+      this.tablePropsColPaddingInput.value = "";
+      this.tablePropsColMarginInput.value = "";
       this.tablePropsColBgColorInput.value = "";
       this.tablePropsColAlignSelect.value = "left";
       this.syncTablePropsColorPair("colBg", "text");
@@ -946,6 +1201,10 @@ export class RichEditor {
   }
 
   private exec(command: string, value?: string): void {
+    if ((command === "undo" || command === "redo") && this.applyFormControlPropsHistory(command, false)) {
+      return;
+    }
+
     if (command === "undo" && this.applyMergeUndoSnapshot()) {
       return;
     }
@@ -1220,28 +1479,6 @@ export class RichEditor {
     this.debugLog(`applyStyleToSelection applied prop=${styleProp} resolved=${appliedValue} text='${(span.textContent ?? "").slice(0, 40)}'`);
   }
 
-  private applyLineHeightToSelection(value: LineHeightOption): void {
-    const range = this.getActiveEditorRange();
-    if (!range) {
-      return;
-    }
-
-    // collapsed면 현재 블록 1개, expanded면 교차하는 블록 전체에 line-height를 적용한다.
-    const blocks = range.collapsed ? [this.getSelectionBlock()] : this.getSelectedBlocks(range);
-    const targets = blocks.filter((block): block is HTMLElement => Boolean(block));
-
-    if (targets.length === 0) {
-      return;
-    }
-
-    for (const block of targets) {
-      block.style.lineHeight = value;
-    }
-
-    this.captureSelection();
-    this.debouncedSave();
-  }
-
   private getSelectionBlock(): HTMLElement | null {
     const element = this.getSelectionElement();
     if (!element) {
@@ -1319,7 +1556,47 @@ export class RichEditor {
   private endToolbarInteraction(): void {
     this.isToolbarInteracting = false;
     this.toolbarInteractionRange = null;
-    this.colorPaletteButton.classList.remove("re-active");
+    this.colorPaletteOwner = "toolbar";
+    this.textColorButton.classList.remove("re-active");
+    this.bgColorButton.classList.remove("re-active");
+  }
+
+  private adjustFontSizeByStep(step: -1 | 1): void {
+    const fontSizeSelect = this.toolbar.querySelector('[data-role="fontSize"]') as HTMLSelectElement | null;
+    if (!fontSizeSelect || fontSizeSelect.options.length === 0) {
+      return;
+    }
+
+    const sizes = Array.from(fontSizeSelect.options).map((option) => option.value);
+    let currentIndex = sizes.indexOf(fontSizeSelect.value);
+
+    if (currentIndex < 0) {
+      const selectedElement = this.getSelectionElement();
+      const currentPx = Number.parseFloat(window.getComputedStyle(selectedElement ?? this.editor).fontSize);
+      let nearestIndex = 0;
+      let nearestDiff = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < sizes.length; index += 1) {
+        const optionPx = Number.parseFloat(sizes[index]);
+        if (!Number.isFinite(optionPx)) {
+          continue;
+        }
+        const diff = Math.abs(optionPx - currentPx);
+        if (diff < nearestDiff) {
+          nearestDiff = diff;
+          nearestIndex = index;
+        }
+      }
+      currentIndex = nearestIndex;
+    }
+
+    const nextIndex = Math.min(sizes.length - 1, Math.max(0, currentIndex + step));
+    if (nextIndex === currentIndex) {
+      return;
+    }
+
+    const nextValue = sizes[nextIndex];
+    fontSizeSelect.value = nextValue;
+    this.applyFormattingRoleChange("fontSize", nextValue, "change");
   }
 
   private applyStyleToTableSelection(
@@ -1526,9 +1803,37 @@ export class RichEditor {
     }
   }
 
+  private alignCurrentTable(direction: "left" | "center" | "right"): void {
+    const cell = this.getSelectedCell();
+    const table = cell?.closest("table") as HTMLTableElement | null;
+    if (!table) {
+      this.showSaveStatus("Table align: no active table");
+      return;
+    }
+
+    const beforeHtml = this.editor.innerHTML;
+    if (direction === "center") {
+      table.style.marginLeft = "auto";
+      table.style.marginRight = "auto";
+    } else if (direction === "right") {
+      table.style.marginLeft = "auto";
+      table.style.marginRight = "0";
+    } else {
+      table.style.marginLeft = "0";
+      table.style.marginRight = "auto";
+    }
+
+    this.pushMergeUndoSnapshot(beforeHtml);
+    this.enableTableColumnResize(table);
+    this.captureSelection();
+    this.debouncedSave();
+    this.showSaveStatus(`Table aligned ${direction}`);
+  }
+
   // 지정한 크기의 기본 테이블을 현재 커서 위치에 삽입한다.
   // 삽입 후 이어쓰기 가능한 문단을 하나 추가한다.
   private insertTable(rows: number, cols: number): void {
+    const beforeHtml = this.editor.innerHTML;
     const table = document.createElement("table");
     table.className = "re-table";
 
@@ -1554,12 +1859,30 @@ export class RichEditor {
     this.insertTrailingParagraphAfterTopLevelAnchor(table);
     this.normalizeTopLevelParagraphs();
     this.enableTableColumnResize(table);
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
   }
 
   private insertWeeklyReportTemplate(): void {
+    const beforeHtml = this.editor.innerHTML;
     const temp = document.createElement("div");
     temp.innerHTML = this.getWeeklyReportTemplateHtml().trim();
+
+    // 업무보고서 템플릿의 top-level table도 일반 삽입 테이블과 동일하게 wrapper를 적용한다.
+    for (const child of Array.from(temp.children)) {
+      if (!(child instanceof HTMLTableElement)) {
+        continue;
+      }
+
+      if (!child.classList.contains("re-table")) {
+        continue;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "re-table-wrap";
+      child.replaceWith(wrapper);
+      wrapper.appendChild(child);
+    }
 
     const nodes = Array.from(temp.childNodes);
     if (nodes.length === 0) {
@@ -1567,10 +1890,37 @@ export class RichEditor {
     }
 
     const tables = Array.from(temp.querySelectorAll("table.re-table")) as HTMLTableElement[];
-    this.insertNodesAtCaret(nodes);
+    const selection = window.getSelection();
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const startElement = range ? this.getRangeStartContainerElement(range) : null;
+    const paragraph = startElement?.closest("p") as HTMLParagraphElement | null;
 
-    for (const table of tables) {
-      this.enableTableColumnResize(table);
+    if (
+      selection
+      && range
+      && this.editor.contains(range.commonAncestorContainer)
+      && paragraph
+      && paragraph.parentElement === this.editor
+    ) {
+      range.deleteContents();
+
+      const fragment = document.createDocumentFragment();
+      for (const node of nodes) {
+        fragment.appendChild(node);
+      }
+      const last = fragment.lastChild;
+      paragraph.parentNode?.insertBefore(fragment, paragraph.nextSibling);
+
+      if (last) {
+        const nextRange = document.createRange();
+        nextRange.setStartAfter(last);
+        nextRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(nextRange);
+        this.captureSelection();
+      }
+    } else {
+      this.insertNodesAtCaret(nodes);
     }
 
     const tailAnchor = tables.at(-1) ?? (nodes.at(-1) as Node | undefined) ?? null;
@@ -1579,6 +1929,11 @@ export class RichEditor {
     }
 
     this.normalizeTopLevelParagraphs();
+    for (const table of tables) {
+      if (table.isConnected) {
+        this.enableTableColumnResize(table);
+      }
+    }
     const focusCell = tables[1]?.querySelector("td:not(.re-report-accent)") as HTMLTableCellElement | null;
     if (focusCell) {
       this.placeCaretInCell(focusCell, "start");
@@ -1590,6 +1945,68 @@ export class RichEditor {
       this.captureSelection();
       this.debugLog(`weekly template inserted focus=${this.describeCell(focusCell)} table=${focusTable ? "main" : "none"}`);
     }
+    this.pushMergeUndoSnapshot(beforeHtml);
+    this.debouncedSave();
+  }
+
+  private insertTemplateByType(templateType: string): void {
+    if (templateType === "weeklyReport") {
+      this.insertWeeklyReportTemplate();
+      return;
+    }
+
+    if (templateType === "meetingNotes") {
+      this.insertSimpleTemplate(this.getMeetingNotesTemplateHtml());
+      return;
+    }
+
+    if (templateType === "projectStatus") {
+      this.insertSimpleTemplate(this.getProjectStatusTemplateHtml());
+      return;
+    }
+
+    if (templateType === "dailyChecklist") {
+      this.insertSimpleTemplate(this.getDailyChecklistTemplateHtml());
+    }
+  }
+
+  private insertSimpleTemplate(html: string): void {
+    const beforeHtml = this.editor.innerHTML;
+    const temp = document.createElement("div");
+    temp.innerHTML = html.trim();
+
+    for (const child of Array.from(temp.children)) {
+      if (!(child instanceof HTMLTableElement) || !child.classList.contains("re-table")) {
+        continue;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "re-table-wrap";
+      child.replaceWith(wrapper);
+      wrapper.appendChild(child);
+    }
+
+    const nodes = Array.from(temp.childNodes);
+    if (nodes.length === 0) {
+      return;
+    }
+
+    const tables = Array.from(temp.querySelectorAll("table.re-table")) as HTMLTableElement[];
+    this.insertNodesAtCaret(nodes);
+
+    const tailAnchor = tables.at(-1) ?? (nodes.at(-1) as Node | undefined) ?? null;
+    if (tailAnchor) {
+      this.insertTrailingParagraphAfterTopLevelAnchor(tailAnchor);
+    }
+
+    this.normalizeTopLevelParagraphs();
+    for (const table of tables) {
+      if (table.isConnected) {
+        this.enableTableColumnResize(table);
+      }
+    }
+
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
   }
 
@@ -1665,6 +2082,115 @@ export class RichEditor {
         <tr>
           <td colspan="2" class="re-report-note-cell">- 원재료 부족 문제에 대한 재고 관리 시스템 개선 요청<br>- 불량 제품에 대한 피드백을 품질 관리팀에 전달<br>- 다음주 중요한 생산 팀 강화 계획</td>
           <td colspan="3" class="re-report-note-cell">- 원재료 재고 관리 시스템의 정확성 문제 개선 필요<br>- 품질 점검 시간을 더 확보할 필요성 제기</td>
+        </tr>
+      </table>
+    `;
+  }
+
+  private getMeetingNotesTemplateHtml(): string {
+    return `
+      <h2>회의록</h2>
+      <table class="re-table">
+        <tr>
+          <td class="re-table-header-cell">회의명</td>
+          <td>정기 운영 회의</td>
+          <td class="re-table-header-cell">일시</td>
+          <td>2026-06-20 10:00</td>
+        </tr>
+        <tr>
+          <td class="re-table-header-cell">참석자</td>
+          <td colspan="3">김민지, 박준호, 이수현</td>
+        </tr>
+      </table>
+      <table class="re-table">
+        <tr>
+          <td class="re-table-header-cell">안건</td>
+          <td class="re-table-header-cell">논의 내용</td>
+          <td class="re-table-header-cell">결정 사항</td>
+          <td class="re-table-header-cell">담당</td>
+          <td class="re-table-header-cell">기한</td>
+        </tr>
+        <tr>
+          <td><br></td>
+          <td><br></td>
+          <td><br></td>
+          <td><br></td>
+          <td><br></td>
+        </tr>
+      </table>
+    `;
+  }
+
+  private getProjectStatusTemplateHtml(): string {
+    return `
+      <h2>프로젝트 현황</h2>
+      <table class="re-table">
+        <tr>
+          <td class="re-table-header-cell">프로젝트</td>
+          <td>리치 에디터 고도화</td>
+          <td class="re-table-header-cell">주차</td>
+          <td>3주차</td>
+        </tr>
+        <tr>
+          <td class="re-table-header-cell">PM</td>
+          <td>최윤아</td>
+          <td class="re-table-header-cell">상태</td>
+          <td>진행 중</td>
+        </tr>
+      </table>
+      <table class="re-table">
+        <tr>
+          <td class="re-table-header-cell">구분</td>
+          <td class="re-table-header-cell">항목</td>
+          <td class="re-table-header-cell">진척도</td>
+          <td class="re-table-header-cell">이슈</td>
+          <td class="re-table-header-cell">대응 계획</td>
+        </tr>
+        <tr>
+          <td>완료</td>
+          <td><br></td>
+          <td>100%</td>
+          <td><br></td>
+          <td><br></td>
+        </tr>
+        <tr>
+          <td>진행</td>
+          <td><br></td>
+          <td>60%</td>
+          <td><br></td>
+          <td><br></td>
+        </tr>
+      </table>
+    `;
+  }
+
+  private getDailyChecklistTemplateHtml(): string {
+    return `
+      <h2>일일 체크리스트</h2>
+      <table class="re-table">
+        <tr>
+          <td class="re-table-header-cell">No</td>
+          <td class="re-table-header-cell">체크 항목</td>
+          <td class="re-table-header-cell">결과</td>
+          <td class="re-table-header-cell">비고</td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td><br></td>
+          <td>□ 완료 / □ 미완료</td>
+          <td><br></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><br></td>
+          <td>□ 완료 / □ 미완료</td>
+          <td><br></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><br></td>
+          <td>□ 완료 / □ 미완료</td>
+          <td><br></td>
         </tr>
       </table>
     `;
@@ -1747,6 +2273,127 @@ export class RichEditor {
     deleteTableOp(this as unknown as Record<string, unknown>);
   }
 
+  private readStyleOrAttrValue(element: HTMLElement, styleValue: string, attrs: string[]): string {
+    const inlineValue = styleValue.trim();
+    if (inlineValue.length > 0) {
+      return inlineValue;
+    }
+
+    for (const attr of attrs) {
+      const raw = element.getAttribute(attr)?.trim() ?? "";
+      if (raw.length > 0) {
+        return raw;
+      }
+    }
+
+    return "";
+  }
+
+  private readSizeInputFromStyleOrAttr(
+    element: HTMLElement,
+    styleValue: string,
+    attrs: string[],
+    options: { allowPercent?: boolean; allowAuto?: boolean } = {},
+  ): string {
+    const normalized = this.normalizeCssSizeInput(styleValue, options);
+    if (normalized.length > 0) {
+      return normalized.endsWith("px") ? normalized.slice(0, -2) : normalized;
+    }
+
+    for (const attr of attrs) {
+      const raw = element.getAttribute(attr)?.trim() ?? "";
+      if (raw.length === 0) {
+        continue;
+      }
+      const fromAttr = this.normalizeCssSizeInput(raw, options);
+      if (fromAttr.length > 0) {
+        return fromAttr.endsWith("px") ? fromAttr.slice(0, -2) : fromAttr;
+      }
+
+      if (/^\d+(\.\d+)?%$/.test(raw)) {
+        return raw;
+      }
+      if (/^\d+(\.\d+)?$/.test(raw)) {
+        return raw;
+      }
+    }
+
+    return "";
+  }
+
+  private normalizeHorizontalAlign(value: string, fallback: "left" | "center" | "right" = "left"): "left" | "center" | "right" {
+    const lower = value.trim().toLowerCase();
+    if (lower === "center") {
+      return "center";
+    }
+    if (lower === "right" || lower === "end") {
+      return "right";
+    }
+    if (lower === "left" || lower === "start") {
+      return "left";
+    }
+    return fallback;
+  }
+
+  private normalizeVerticalAlign(value: string, fallback: "top" | "middle" | "bottom" = "top"): "top" | "middle" | "bottom" {
+    const lower = value.trim().toLowerCase();
+    if (lower === "middle" || lower === "center") {
+      return "middle";
+    }
+    if (lower === "bottom") {
+      return "bottom";
+    }
+    if (lower === "top") {
+      return "top";
+    }
+    return fallback;
+  }
+
+  private readTableAlign(table: HTMLTableElement): "left" | "center" | "right" {
+    if (table.style.marginLeft === "auto" && table.style.marginRight === "auto") {
+      return "center";
+    }
+    if (table.style.marginLeft === "auto") {
+      return "right";
+    }
+
+    const styleAlign = table.style.textAlign.trim().toLowerCase();
+    if (styleAlign === "left" || styleAlign === "center" || styleAlign === "right") {
+      return styleAlign;
+    }
+
+    return this.normalizeHorizontalAlign(table.getAttribute("align") ?? "left");
+  }
+
+  private readTableMarginInput(table: HTMLTableElement): string {
+    const marginFromStyle = this.readSpacingInputFromStyleOrAttr(table, table.style.margin, [], { allowAuto: true });
+    if (marginFromStyle.length > 0) {
+      return marginFromStyle;
+    }
+
+    const align = this.readTableAlign(table);
+    if (align === "center") {
+      return "0 auto";
+    }
+    if (align === "right") {
+      return "0 0 0 auto";
+    }
+    return "0 auto 0 0";
+  }
+
+  private readCellWrapPreset(cell: HTMLTableCellElement): "normal" | "nowrap" | "break-word" {
+    if (cell.style.whiteSpace === "nowrap") {
+      return "nowrap";
+    }
+    if (cell.style.overflowWrap === "anywhere") {
+      return "break-word";
+    }
+    if (cell.hasAttribute("nowrap")) {
+      return "nowrap";
+    }
+    return "normal";
+  }
+
   private applyTableProperties(): void {
     const cell = this.getSelectedCell();
     const table = cell?.closest("table") as HTMLTableElement | null;
@@ -1757,17 +2404,21 @@ export class RichEditor {
 
     this.startTablePropsSession("table", table);
 
-    this.tablePropsWidthInput.value = table.style.width || "";
-    this.tablePropsBorderWidthInput.value = table.style.borderWidth?.replace("px", "") || "";
-    this.tablePropsBorderColorInput.value = table.style.borderColor || "";
-    this.tablePropsBgColorInput.value = table.style.backgroundColor || "";
-    const currentAlign = (table.style.marginLeft === "auto" && table.style.marginRight === "auto")
-      ? "center"
-      : (table.style.marginLeft === "auto" ? "right" : "left");
+    this.tablePropsWidthInput.value = this.readSizeInputFromStyleOrAttr(table, table.style.width, ["width"], { allowPercent: true, allowAuto: true });
+    this.tablePropsBorderWidthInput.value = this.readSizeInputFromStyleOrAttr(table, table.style.borderWidth, ["border"]);
+    this.tablePropsBorderColorInput.value = this.readStyleOrAttrValue(table, table.style.borderColor, ["bordercolor"]);
+    this.tablePropsBgColorInput.value = this.readStyleOrAttrValue(table, table.style.backgroundColor, ["bgcolor"]);
+    this.tablePropsMarginInput.value = this.readTableMarginInput(table);
+    const firstCell = table.querySelector("td,th") as HTMLTableCellElement | null;
+    this.tablePropsPaddingInput.value = firstCell
+      ? this.readSpacingInputFromStyleOrAttr(firstCell, firstCell.style.padding, ["cellpadding"])
+      : this.readSpacingInputFromStyleOrAttr(table, "", ["cellpadding"]);
+    const currentAlign = this.readTableAlign(table);
     this.tablePropsAlignSelect.value = currentAlign;
     this.syncTablePropsColorPair("tableBorder", "text");
     this.syncTablePropsColorPair("tableBg", "text");
     this.activeTablePropsColorField = "tableBg";
+    this.captureTablePropsInitialValues();
 
     this.setTablePropsValidation("");
     this.updateTablePropsSummary();
@@ -1785,11 +2436,24 @@ export class RichEditor {
     this.startTablePropsSession("row", row.closest("table") as HTMLTableElement, row);
 
     const firstCell = row.cells[0] as HTMLTableCellElement | undefined;
-    this.tablePropsRowHeightInput.value = firstCell?.style.height?.replace("px", "") || "";
-    this.tablePropsRowBgColorInput.value = firstCell?.style.backgroundColor || "";
-    this.tablePropsRowVAlignSelect.value = firstCell?.style.verticalAlign || "top";
+    this.tablePropsRowHeightInput.value = firstCell
+      ? this.readSizeInputFromStyleOrAttr(firstCell, firstCell.style.height, ["height"])
+      : "";
+    this.tablePropsRowPaddingInput.value = firstCell
+      ? this.readSpacingInputFromStyleOrAttr(firstCell, firstCell.style.padding, ["cellpadding"])
+      : this.readSpacingInputFromStyleOrAttr(row.closest("table") as HTMLElement, "", ["cellpadding"]);
+    this.tablePropsRowMarginInput.value = firstCell
+      ? this.readSpacingInputFromStyleOrAttr(firstCell, firstCell.style.margin, [], { allowAuto: true })
+      : "";
+    this.tablePropsRowBgColorInput.value = firstCell
+      ? this.readStyleOrAttrValue(firstCell, firstCell.style.backgroundColor, ["bgcolor"])
+      : "";
+    this.tablePropsRowVAlignSelect.value = firstCell
+      ? this.normalizeVerticalAlign(this.readStyleOrAttrValue(firstCell, firstCell.style.verticalAlign, ["valign"]))
+      : "top";
     this.syncTablePropsColorPair("rowBg", "text");
     this.activeTablePropsColorField = "rowBg";
+    this.captureTablePropsInitialValues();
 
     this.setTablePropsValidation("");
     this.updateTablePropsSummary();
@@ -1809,29 +2473,34 @@ export class RichEditor {
     }
 
     const targets = this.getTablePropsCellTargets(cell);
+    const tableCellPadding = table.getAttribute("cellpadding")?.trim() ?? "";
 
     this.startTablePropsSession("cell", table, cell.parentElement as HTMLTableRowElement | null, -1, cell, targets);
 
-    this.tablePropsCellBorderWidthInput.value = cell.style.borderWidth?.replace("px", "") || "";
+    this.tablePropsCellBorderWidthInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.borderWidth, ["border", "data-border-width"])
+      || this.readSizeInputFromStyleOrAttr(table, table.style.borderWidth, ["border"]);
     this.tablePropsCellBorderStyleSelect.value = cell.style.borderStyle || "solid";
-    this.tablePropsCellBorderTopInput.value = cell.style.borderTopWidth?.replace("px", "") || "";
-    this.tablePropsCellBorderRightInput.value = cell.style.borderRightWidth?.replace("px", "") || "";
-    this.tablePropsCellBorderBottomInput.value = cell.style.borderBottomWidth?.replace("px", "") || "";
-    this.tablePropsCellBorderLeftInput.value = cell.style.borderLeftWidth?.replace("px", "") || "";
-    this.tablePropsCellPaddingInput.value = cell.style.padding?.replace("px", "") || "";
+    this.tablePropsCellBorderTopInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.borderTopWidth, []);
+    this.tablePropsCellBorderRightInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.borderRightWidth, []);
+    this.tablePropsCellBorderBottomInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.borderBottomWidth, []);
+    this.tablePropsCellBorderLeftInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.borderLeftWidth, []);
+    this.tablePropsCellPaddingInput.value = this.readSizeInputFromStyleOrAttr(cell, cell.style.padding, ["cellpadding"])
+      || this.readSizeInputFromStyleOrAttr(table, tableCellPadding, ["cellpadding"]);
     this.tablePropsCellPaddingRange.value = this.tablePropsCellPaddingInput.value || "12";
-    this.tablePropsCellBorderColorInput.value = cell.style.borderColor || "";
-    this.tablePropsCellTextColorInput.value = cell.style.color || "";
-    this.tablePropsCellBgColorInput.value = cell.style.backgroundColor || "";
-    this.tablePropsCellAlignSelect.value = cell.style.textAlign || "left";
-    this.tablePropsCellVAlignSelect.value = cell.style.verticalAlign || "top";
-    this.tablePropsCellWrapSelect.value = cell.style.whiteSpace === "nowrap"
-      ? "nowrap"
-      : (cell.style.overflowWrap === "anywhere" ? "break-word" : "normal");
+    this.tablePropsCellMarginInput.value = this.readSpacingInputFromStyleOrAttr(cell, cell.style.margin, [], { allowAuto: true });
+    this.tablePropsCellBorderColorInput.value = this.readStyleOrAttrValue(cell, cell.style.borderColor, ["bordercolor"])
+      || this.readStyleOrAttrValue(table, table.style.borderColor, ["bordercolor"]);
+    this.tablePropsCellTextColorInput.value = this.readStyleOrAttrValue(cell, cell.style.color, ["color"]);
+    this.tablePropsCellBgColorInput.value = this.readStyleOrAttrValue(cell, cell.style.backgroundColor, ["bgcolor"])
+      || this.readStyleOrAttrValue(table, table.style.backgroundColor, ["bgcolor"]);
+    this.tablePropsCellAlignSelect.value = this.normalizeHorizontalAlign(this.readStyleOrAttrValue(cell, cell.style.textAlign, ["align"]));
+    this.tablePropsCellVAlignSelect.value = this.normalizeVerticalAlign(this.readStyleOrAttrValue(cell, cell.style.verticalAlign, ["valign"]));
+    this.tablePropsCellWrapSelect.value = this.readCellWrapPreset(cell);
     this.syncTablePropsColorPair("cellBorder", "text");
     this.syncTablePropsColorPair("cellText", "text");
     this.syncTablePropsColorPair("cellBg", "text");
     this.activeTablePropsColorField = "cellBg";
+    this.captureTablePropsInitialValues();
 
     this.setTablePropsValidation("");
     this.updateTablePropsSummary();
@@ -1856,11 +2525,14 @@ export class RichEditor {
     this.startTablePropsSession("col", table, null, anchor.col);
 
     const sampleCell = tableData.matrix[anchor.row]?.[anchor.col] ?? cell;
-    this.tablePropsColWidthInput.value = sampleCell.style.minWidth?.replace("px", "") || "";
-    this.tablePropsColBgColorInput.value = sampleCell.style.backgroundColor || "";
-    this.tablePropsColAlignSelect.value = sampleCell.style.textAlign || "left";
+    this.tablePropsColWidthInput.value = this.readSizeInputFromStyleOrAttr(sampleCell, sampleCell.style.minWidth || sampleCell.style.width, ["width"]);
+    this.tablePropsColPaddingInput.value = this.readSpacingInputFromStyleOrAttr(sampleCell, sampleCell.style.padding, ["cellpadding"]);
+    this.tablePropsColMarginInput.value = this.readSpacingInputFromStyleOrAttr(sampleCell, sampleCell.style.margin, [], { allowAuto: true });
+    this.tablePropsColBgColorInput.value = this.readStyleOrAttrValue(sampleCell, sampleCell.style.backgroundColor, ["bgcolor"]);
+    this.tablePropsColAlignSelect.value = this.normalizeHorizontalAlign(this.readStyleOrAttrValue(sampleCell, sampleCell.style.textAlign, ["align"]));
     this.syncTablePropsColorPair("colBg", "text");
     this.activeTablePropsColorField = "colBg";
+    this.captureTablePropsInitialValues();
 
     this.setTablePropsValidation("");
     this.updateTablePropsSummary();
@@ -1911,6 +2583,7 @@ export class RichEditor {
       return;
     }
 
+    const beforeHtml = this.editor.innerHTML;
     const applied = this.applyTablePropsFromDialog(false);
     if (!applied) {
       this.showSaveStatus("Table properties: no active target");
@@ -1919,6 +2592,7 @@ export class RichEditor {
       return;
     }
 
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.captureSelection();
     this.debouncedSave();
     if (this.selectedCells.size > 1) {
@@ -1941,44 +2615,99 @@ export class RichEditor {
       const nextBorderSize = this.normalizeCssSizeInput(this.tablePropsBorderWidthInput.value);
       const nextBorderColor = this.normalizeColorInput(this.tablePropsBorderColorInput.value);
       const nextBgColor = this.normalizeColorInput(this.tablePropsBgColorInput.value);
+      const nextMargin = this.normalizeCssSpacingInput(this.tablePropsMarginInput.value, { allowAuto: true });
+      const nextPadding = this.normalizeCssSpacingInput(this.tablePropsPaddingInput.value);
       const nextAlign = this.tablePropsAlignSelect.value;
 
-      table.style.width = nextWidth;
-      table.style.backgroundColor = nextBgColor;
-      if (nextBorderSize.length > 0) {
-        table.style.borderWidth = /^\d+$/.test(nextBorderSize) ? `${nextBorderSize}px` : nextBorderSize;
-      } else {
-        table.style.removeProperty("border-width");
-      }
-      table.style.borderStyle = "solid";
-      table.style.borderColor = nextBorderColor;
+      const changedWidth = this.isTablePropsFieldChanged("tablePropsWidth", this.tablePropsWidthInput.value);
+      const changedBorderWidth = this.isTablePropsFieldChanged("tablePropsBorderWidth", this.tablePropsBorderWidthInput.value);
+      const changedBorderColor = this.isTablePropsFieldChanged("tablePropsBorderColor", this.tablePropsBorderColorInput.value);
+      const changedBg = this.isTablePropsFieldChanged("tablePropsBgColor", this.tablePropsBgColorInput.value);
+      const changedMargin = this.isTablePropsFieldChanged("tablePropsMargin", this.tablePropsMarginInput.value);
+      const changedPadding = this.isTablePropsFieldChanged("tablePropsPadding", this.tablePropsPaddingInput.value);
+      const changedAlign = this.isTablePropsFieldChanged("tablePropsAlign", this.tablePropsAlignSelect.value);
 
-      if (nextAlign === "center") {
-        table.style.marginLeft = "auto";
-        table.style.marginRight = "auto";
-      } else if (nextAlign === "right") {
-        table.style.marginLeft = "auto";
-        table.style.marginRight = "0";
-      } else {
-        table.style.marginLeft = "0";
-        table.style.marginRight = "auto";
+      if (changedWidth) {
+        if (nextWidth.length > 0) {
+          table.style.width = nextWidth;
+        } else {
+          table.style.removeProperty("width");
+        }
+      }
+
+      if (changedBg) {
+        table.style.backgroundColor = nextBgColor;
+      }
+
+      if (changedBorderWidth || changedBorderColor) {
+        table.style.borderStyle = "solid";
+        if (changedBorderWidth) {
+          if (nextBorderSize.length > 0) {
+            table.style.borderWidth = /^\d+$/.test(nextBorderSize) ? `${nextBorderSize}px` : nextBorderSize;
+          } else {
+            table.style.removeProperty("border-width");
+          }
+        }
+        if (changedBorderColor) {
+          table.style.borderColor = nextBorderColor;
+        }
+      }
+
+      if (changedMargin) {
+        if (nextMargin.length > 0) {
+          table.style.margin = nextMargin;
+        } else {
+          table.style.removeProperty("margin");
+          table.style.removeProperty("margin-left");
+          table.style.removeProperty("margin-right");
+        }
+      } else if (changedAlign) {
+        if (nextAlign === "center") {
+          table.style.marginLeft = "auto";
+          table.style.marginRight = "auto";
+        } else if (nextAlign === "right") {
+          table.style.marginLeft = "auto";
+          table.style.marginRight = "0";
+        } else {
+          table.style.marginLeft = "0";
+          table.style.marginRight = "auto";
+        }
       }
 
       for (const tableCell of Array.from(table.querySelectorAll("td,th"))) {
         const currentCell = tableCell as HTMLTableCellElement;
-        currentCell.style.borderStyle = "solid";
-        if (nextBorderSize.length > 0) {
-          currentCell.style.borderWidth = /^\d+$/.test(nextBorderSize) ? `${nextBorderSize}px` : nextBorderSize;
+        if (changedBorderWidth || changedBorderColor) {
+          currentCell.style.borderStyle = "solid";
         }
-        if (nextBorderColor.length > 0) {
+        if (changedBorderWidth) {
+          if (nextBorderSize.length > 0) {
+            currentCell.style.borderWidth = /^\d+$/.test(nextBorderSize) ? `${nextBorderSize}px` : nextBorderSize;
+          } else {
+            currentCell.style.removeProperty("border-width");
+          }
+        }
+        if (changedBorderColor) {
           currentCell.style.borderColor = nextBorderColor;
         }
-        this.applyTableCellBackground(currentCell, nextBgColor);
+        if (changedPadding) {
+          if (nextPadding.length > 0) {
+            currentCell.style.padding = nextPadding;
+          } else {
+            currentCell.style.removeProperty("padding");
+          }
+        }
+        if (changedBg) {
+          this.applyTableCellBackground(currentCell, nextBgColor);
+        }
       }
 
       this.enableTableColumnResize(table);
-      this.pushRecentTablePropColor(nextBorderColor);
-      this.pushRecentTablePropColor(nextBgColor);
+      if (changedBorderColor) {
+        this.pushRecentTablePropColor(nextBorderColor);
+      }
+      if (changedBg) {
+        this.pushRecentTablePropColor(nextBgColor);
+      }
       if (!preview) {
         this.showSaveStatus("Table properties applied");
         this.debugLog(`table props apply width='${nextWidth}' border='${nextBorderSize}' color='${nextBorderColor}' bg='${nextBgColor}' align='${nextAlign}'`);
@@ -1991,22 +2720,52 @@ export class RichEditor {
         return false;
       }
       const nextHeight = this.normalizeCssSizeInput(this.tablePropsRowHeightInput.value);
+      const nextPadding = this.normalizeCssSpacingInput(this.tablePropsRowPaddingInput.value);
+      const nextMargin = this.normalizeCssSpacingInput(this.tablePropsRowMarginInput.value, { allowAuto: true });
       const nextBg = this.normalizeColorInput(this.tablePropsRowBgColorInput.value);
       const nextAlign = this.tablePropsRowVAlignSelect.value;
 
+      const changedHeight = this.isTablePropsFieldChanged("tablePropsRowHeight", this.tablePropsRowHeightInput.value);
+      const changedPadding = this.isTablePropsFieldChanged("tablePropsRowPadding", this.tablePropsRowPaddingInput.value);
+      const changedMargin = this.isTablePropsFieldChanged("tablePropsRowMargin", this.tablePropsRowMarginInput.value);
+      const changedBg = this.isTablePropsFieldChanged("tablePropsRowBgColor", this.tablePropsRowBgColorInput.value);
+      const changedVAlign = this.isTablePropsFieldChanged("tablePropsRowVAlign", this.tablePropsRowVAlignSelect.value);
+
       for (const rowCell of Array.from(row.cells)) {
         const currentCell = rowCell as HTMLTableCellElement;
-        if (nextHeight.length > 0) {
-          currentCell.style.height = /^\d+$/.test(nextHeight) ? `${nextHeight}px` : nextHeight;
+        if (changedHeight) {
+          if (nextHeight.length > 0) {
+            currentCell.style.height = /^\d+$/.test(nextHeight) ? `${nextHeight}px` : nextHeight;
+          } else {
+            currentCell.style.removeProperty("height");
+          }
         }
-        this.applyTableCellBackground(currentCell, nextBg);
-        if (nextAlign === "top" || nextAlign === "middle" || nextAlign === "bottom") {
+        if (changedPadding) {
+          if (nextPadding.length > 0) {
+            currentCell.style.padding = nextPadding;
+          } else {
+            currentCell.style.removeProperty("padding");
+          }
+        }
+        if (changedMargin) {
+          if (nextMargin.length > 0) {
+            currentCell.style.margin = nextMargin;
+          } else {
+            currentCell.style.removeProperty("margin");
+          }
+        }
+        if (changedBg) {
+          this.applyTableCellBackground(currentCell, nextBg);
+        }
+        if (changedVAlign && (nextAlign === "top" || nextAlign === "middle" || nextAlign === "bottom")) {
           currentCell.style.verticalAlign = nextAlign;
         }
       }
 
       if (!preview) {
-        this.pushRecentTablePropColor(nextBg);
+        if (changedBg) {
+          this.pushRecentTablePropColor(nextBg);
+        }
         this.showSaveStatus("Row properties applied");
         this.debugLog(`row props apply row=${row.rowIndex} height='${nextHeight}' bg='${nextBg}' valign='${nextAlign}'`);
       }
@@ -2025,6 +2784,7 @@ export class RichEditor {
       const nextBorderBottom = this.normalizeCssSizeInput(this.tablePropsCellBorderBottomInput.value);
       const nextBorderLeft = this.normalizeCssSizeInput(this.tablePropsCellBorderLeftInput.value);
       const nextPadding = this.normalizeCssSizeInput(this.tablePropsCellPaddingInput.value);
+      const nextMargin = this.normalizeCssSpacingInput(this.tablePropsCellMarginInput.value, { allowAuto: true });
       const nextBorderColor = this.normalizeColorInput(this.tablePropsCellBorderColorInput.value);
       const nextTextColor = this.normalizeColorInput(this.tablePropsCellTextColorInput.value);
       const nextBg = this.normalizeColorInput(this.tablePropsCellBgColorInput.value);
@@ -2032,56 +2792,114 @@ export class RichEditor {
       const nextVAlign = this.tablePropsCellVAlignSelect.value;
       const nextWrap = this.tablePropsCellWrapSelect.value;
 
+      const changedBorderWidth = this.isTablePropsFieldChanged("tablePropsCellBorderWidth", this.tablePropsCellBorderWidthInput.value);
+      const changedBorderStyle = this.isTablePropsFieldChanged("tablePropsCellBorderStyle", this.tablePropsCellBorderStyleSelect.value);
+      const changedBorderTop = this.isTablePropsFieldChanged("tablePropsCellBorderTop", this.tablePropsCellBorderTopInput.value);
+      const changedBorderRight = this.isTablePropsFieldChanged("tablePropsCellBorderRight", this.tablePropsCellBorderRightInput.value);
+      const changedBorderBottom = this.isTablePropsFieldChanged("tablePropsCellBorderBottom", this.tablePropsCellBorderBottomInput.value);
+      const changedBorderLeft = this.isTablePropsFieldChanged("tablePropsCellBorderLeft", this.tablePropsCellBorderLeftInput.value);
+      const changedPadding = this.isTablePropsFieldChanged("tablePropsCellPadding", this.tablePropsCellPaddingInput.value);
+      const changedMargin = this.isTablePropsFieldChanged("tablePropsCellMargin", this.tablePropsCellMarginInput.value);
+      const changedBorderColor = this.isTablePropsFieldChanged("tablePropsCellBorderColor", this.tablePropsCellBorderColorInput.value);
+      const changedTextColor = this.isTablePropsFieldChanged("tablePropsCellTextColor", this.tablePropsCellTextColorInput.value);
+      const changedBg = this.isTablePropsFieldChanged("tablePropsCellBgColor", this.tablePropsCellBgColorInput.value);
+      const changedAlign = this.isTablePropsFieldChanged("tablePropsCellAlign", this.tablePropsCellAlignSelect.value);
+      const changedVAlign = this.isTablePropsFieldChanged("tablePropsCellVAlign", this.tablePropsCellVAlignSelect.value);
+      const changedWrap = this.isTablePropsFieldChanged("tablePropsCellWrap", this.tablePropsCellWrapSelect.value);
+
       for (const target of targets) {
-        target.style.borderStyle = nextBorderStyle || "solid";
-        if (nextBorderWidth.length > 0) {
-          target.style.borderWidth = /^\d+$/.test(nextBorderWidth) ? `${nextBorderWidth}px` : nextBorderWidth;
+        if (changedBorderStyle) {
+          target.style.borderStyle = nextBorderStyle || "solid";
         }
-        if (nextBorderTop.length > 0) {
-          target.style.borderTopWidth = /^\d+$/.test(nextBorderTop) ? `${nextBorderTop}px` : nextBorderTop;
+        if (changedBorderWidth) {
+          if (nextBorderWidth.length > 0) {
+            target.style.borderWidth = /^\d+$/.test(nextBorderWidth) ? `${nextBorderWidth}px` : nextBorderWidth;
+          } else {
+            target.style.removeProperty("border-width");
+          }
         }
-        if (nextBorderRight.length > 0) {
-          target.style.borderRightWidth = /^\d+$/.test(nextBorderRight) ? `${nextBorderRight}px` : nextBorderRight;
+        if (changedBorderTop) {
+          if (nextBorderTop.length > 0) {
+            target.style.borderTopWidth = /^\d+$/.test(nextBorderTop) ? `${nextBorderTop}px` : nextBorderTop;
+          } else {
+            target.style.removeProperty("border-top-width");
+          }
         }
-        if (nextBorderBottom.length > 0) {
-          target.style.borderBottomWidth = /^\d+$/.test(nextBorderBottom) ? `${nextBorderBottom}px` : nextBorderBottom;
+        if (changedBorderRight) {
+          if (nextBorderRight.length > 0) {
+            target.style.borderRightWidth = /^\d+$/.test(nextBorderRight) ? `${nextBorderRight}px` : nextBorderRight;
+          } else {
+            target.style.removeProperty("border-right-width");
+          }
         }
-        if (nextBorderLeft.length > 0) {
-          target.style.borderLeftWidth = /^\d+$/.test(nextBorderLeft) ? `${nextBorderLeft}px` : nextBorderLeft;
+        if (changedBorderBottom) {
+          if (nextBorderBottom.length > 0) {
+            target.style.borderBottomWidth = /^\d+$/.test(nextBorderBottom) ? `${nextBorderBottom}px` : nextBorderBottom;
+          } else {
+            target.style.removeProperty("border-bottom-width");
+          }
         }
-        if (nextPadding.length > 0) {
-          target.style.padding = /^\d+$/.test(nextPadding) ? `${nextPadding}px` : nextPadding;
+        if (changedBorderLeft) {
+          if (nextBorderLeft.length > 0) {
+            target.style.borderLeftWidth = /^\d+$/.test(nextBorderLeft) ? `${nextBorderLeft}px` : nextBorderLeft;
+          } else {
+            target.style.removeProperty("border-left-width");
+          }
         }
-        if (nextBorderColor.length > 0) {
+        if (changedPadding) {
+          if (nextPadding.length > 0) {
+            target.style.padding = /^\d+$/.test(nextPadding) ? `${nextPadding}px` : nextPadding;
+          } else {
+            target.style.removeProperty("padding");
+          }
+        }
+        if (changedMargin) {
+          if (nextMargin.length > 0) {
+            target.style.margin = nextMargin;
+          } else {
+            target.style.removeProperty("margin");
+          }
+        }
+        if (changedBorderColor) {
           target.style.borderColor = nextBorderColor;
         }
-        if (nextTextColor.length > 0) {
+        if (changedTextColor) {
           target.style.color = nextTextColor;
         }
-        this.applyTableCellBackground(target, nextBg);
-        if (nextAlign === "left" || nextAlign === "center" || nextAlign === "right") {
+        if (changedBg) {
+          this.applyTableCellBackground(target, nextBg);
+        }
+        if (changedAlign && (nextAlign === "left" || nextAlign === "center" || nextAlign === "right")) {
           target.style.textAlign = nextAlign;
         }
-        if (nextVAlign === "top" || nextVAlign === "middle" || nextVAlign === "bottom") {
+        if (changedVAlign && (nextVAlign === "top" || nextVAlign === "middle" || nextVAlign === "bottom")) {
           target.style.verticalAlign = nextVAlign;
         }
 
-        if (nextWrap === "nowrap") {
-          target.style.whiteSpace = "nowrap";
-          target.style.overflowWrap = "normal";
-        } else if (nextWrap === "break-word") {
-          target.style.whiteSpace = "normal";
-          target.style.overflowWrap = "anywhere";
-        } else {
-          target.style.whiteSpace = "normal";
-          target.style.overflowWrap = "normal";
+        if (changedWrap) {
+          if (nextWrap === "nowrap") {
+            target.style.whiteSpace = "nowrap";
+            target.style.overflowWrap = "normal";
+          } else if (nextWrap === "break-word") {
+            target.style.whiteSpace = "normal";
+            target.style.overflowWrap = "anywhere";
+          } else {
+            target.style.whiteSpace = "normal";
+            target.style.overflowWrap = "normal";
+          }
         }
       }
 
       if (!preview) {
-        this.pushRecentTablePropColor(nextBorderColor);
-        this.pushRecentTablePropColor(nextTextColor);
-        this.pushRecentTablePropColor(nextBg);
+        if (changedBorderColor) {
+          this.pushRecentTablePropColor(nextBorderColor);
+        }
+        if (changedTextColor) {
+          this.pushRecentTablePropColor(nextTextColor);
+        }
+        if (changedBg) {
+          this.pushRecentTablePropColor(nextBg);
+        }
         this.showSaveStatus("Cell properties applied");
         this.debugLog(
           `cell props apply border='${nextBorderWidth}' style='${nextBorderStyle}' sides='${nextBorderTop}/${nextBorderRight}/${nextBorderBottom}/${nextBorderLeft}' padding='${nextPadding}' borderColor='${nextBorderColor}' text='${nextTextColor}' bg='${nextBg}' align='${nextAlign}' valign='${nextVAlign}' wrap='${nextWrap}' targets=${targets.length}`,
@@ -2095,23 +2913,53 @@ export class RichEditor {
       }
 
       const nextWidth = this.normalizeCssSizeInput(this.tablePropsColWidthInput.value);
+      const nextPadding = this.normalizeCssSpacingInput(this.tablePropsColPaddingInput.value);
+      const nextMargin = this.normalizeCssSpacingInput(this.tablePropsColMarginInput.value, { allowAuto: true });
       const nextBg = this.normalizeColorInput(this.tablePropsColBgColorInput.value);
       const nextAlign = this.tablePropsColAlignSelect.value;
       const targets = this.collectColumnTargets(table, this.tablePropsSessionCol);
 
+      const changedWidth = this.isTablePropsFieldChanged("tablePropsColWidth", this.tablePropsColWidthInput.value);
+      const changedPadding = this.isTablePropsFieldChanged("tablePropsColPadding", this.tablePropsColPaddingInput.value);
+      const changedMargin = this.isTablePropsFieldChanged("tablePropsColMargin", this.tablePropsColMarginInput.value);
+      const changedBg = this.isTablePropsFieldChanged("tablePropsColBgColor", this.tablePropsColBgColorInput.value);
+      const changedAlign = this.isTablePropsFieldChanged("tablePropsColAlign", this.tablePropsColAlignSelect.value);
+
       for (const target of targets) {
-        if (nextWidth.length > 0) {
-          target.style.minWidth = /^\d+$/.test(nextWidth) ? `${nextWidth}px` : nextWidth;
+        if (changedWidth) {
+          if (nextWidth.length > 0) {
+            target.style.minWidth = /^\d+$/.test(nextWidth) ? `${nextWidth}px` : nextWidth;
+          } else {
+            target.style.removeProperty("min-width");
+          }
         }
-        this.applyTableCellBackground(target, nextBg);
-        if (nextAlign === "left" || nextAlign === "center" || nextAlign === "right") {
+        if (changedPadding) {
+          if (nextPadding.length > 0) {
+            target.style.padding = nextPadding;
+          } else {
+            target.style.removeProperty("padding");
+          }
+        }
+        if (changedMargin) {
+          if (nextMargin.length > 0) {
+            target.style.margin = nextMargin;
+          } else {
+            target.style.removeProperty("margin");
+          }
+        }
+        if (changedBg) {
+          this.applyTableCellBackground(target, nextBg);
+        }
+        if (changedAlign && (nextAlign === "left" || nextAlign === "center" || nextAlign === "right")) {
           target.style.textAlign = nextAlign;
         }
       }
 
       this.enableTableColumnResize(table);
       if (!preview) {
-        this.pushRecentTablePropColor(nextBg);
+        if (changedBg) {
+          this.pushRecentTablePropColor(nextBg);
+        }
         this.showSaveStatus("Column properties applied");
         this.debugLog(`col props apply col=${this.tablePropsSessionCol} width='${nextWidth}' bg='${nextBg}' align='${nextAlign}' targets=${targets.length}`);
       }
@@ -3271,27 +4119,33 @@ export class RichEditor {
   private updateMergeActionUi(previewCount: number, rows: number, cols: number): void {
     if (this.pendingExpandedMerge) {
       // 2단계 병합 UX: 첫 클릭은 preview, 두 번째 클릭은 confirm.
-      this.mergeButton.textContent = "Confirm ✓";
       this.mergeButton.title = "Confirm Expanded Merge (Enter)";
       this.mergeButton.classList.add("re-active");
       this.mergeButton.classList.add("re-confirm");
-      this.mergePreviewBadge.hidden = false;
-      this.mergePreviewBadge.textContent = `+${previewCount} preview`;
-      this.mergeRangeBadge.hidden = false;
-      this.mergeRangeBadge.textContent = `${rows}x${cols}`;
-      this.mergeRangeBadge.title = `Merge range: ${rows} rows x ${cols} cols`;
+      if (this.mergePreviewBadge) {
+        this.mergePreviewBadge.hidden = false;
+        this.mergePreviewBadge.textContent = `+${previewCount} preview`;
+      }
+      if (this.mergeRangeBadge) {
+        this.mergeRangeBadge.hidden = false;
+        this.mergeRangeBadge.textContent = `${rows}x${cols}`;
+        this.mergeRangeBadge.title = `Merge range: ${rows} rows x ${cols} cols`;
+      }
       return;
     }
 
-    this.mergeButton.textContent = "Merge";
     this.mergeButton.title = "Merge Selected Cells (Shift+Click)";
     this.mergeButton.classList.remove("re-active");
     this.mergeButton.classList.remove("re-confirm");
-    this.mergePreviewBadge.hidden = true;
-    this.mergePreviewBadge.textContent = "Preview";
-    this.mergeRangeBadge.hidden = true;
-    this.mergeRangeBadge.textContent = "0x0";
-    this.mergeRangeBadge.title = "Merge range";
+    if (this.mergePreviewBadge) {
+      this.mergePreviewBadge.hidden = true;
+      this.mergePreviewBadge.textContent = "Preview";
+    }
+    if (this.mergeRangeBadge) {
+      this.mergeRangeBadge.hidden = true;
+      this.mergeRangeBadge.textContent = "0x0";
+      this.mergeRangeBadge.title = "Merge range";
+    }
   }
 
   private flashPendingMergeArea(): void {
@@ -3384,7 +4238,12 @@ export class RichEditor {
   private setDebugPanelVisible(next: boolean): void {
     this.debugPanelVisible = next;
     this.debugPanelWrap.classList.toggle("is-visible", next);
-    this.debugToggleButton.textContent = next ? "Debug On" : "Debug Off";
+    const debugLabel = this.debugToggleButton.querySelector('[data-role="debugToggleLabel"]') as HTMLSpanElement | null;
+    if (debugLabel) {
+      debugLabel.textContent = next ? "Debug On" : "Debug Off";
+    } else {
+      this.debugToggleButton.textContent = next ? "Debug On" : "Debug Off";
+    }
     this.debugToggleButton.setAttribute("aria-pressed", next ? "true" : "false");
 
     if (next) {
@@ -3667,6 +4526,1065 @@ export class RichEditor {
     this.debouncedSave();
   }
 
+  private insertCheckboxControl(): void {
+    this.insertFormControl("checkbox", "체크 항목");
+  }
+
+  private insertRadioControl(): void {
+    this.insertFormControl("radio", "선택지");
+  }
+
+  private insertInputControl(): void {
+    this.insertFormControl("input", "입력 항목");
+  }
+
+  private insertMemoControl(): void {
+    this.insertFormControl("memo", "메모");
+  }
+
+  private insertFormControl(type: "checkbox" | "radio" | "input" | "memo", labelText: string): void {
+    const wrapper = document.createElement("span");
+    wrapper.className = "re-form-control-wrap";
+    wrapper.contentEditable = "false";
+    wrapper.dataset.controlKind = type;
+    this.ensureFormControlId(wrapper);
+
+    let control: HTMLInputElement | HTMLTextAreaElement;
+    if (type === "memo") {
+      const textarea = document.createElement("textarea");
+      textarea.rows = 3;
+      textarea.placeholder = "메모를 입력하세요";
+      control = textarea;
+    } else {
+      const input = document.createElement("input");
+      input.type = type === "input" ? "text" : type;
+      if (type === "radio") {
+        input.name = `re-radio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      }
+      if (type === "input") {
+        input.placeholder = "입력";
+      }
+      control = input;
+    }
+
+    const inputWrap = document.createElement("span");
+    inputWrap.className = "re-form-control-input";
+    inputWrap.contentEditable = "false";
+    inputWrap.appendChild(control);
+
+    const label = document.createElement("span");
+    label.className = "re-form-control-label";
+    label.contentEditable = "false";
+    label.textContent = labelText;
+
+    wrapper.append(inputWrap, label);
+
+    const handlePoints: Array<"nw" | "ne" | "sw" | "se"> = ["nw", "ne", "sw", "se"];
+    for (const key of handlePoints) {
+      const handle = document.createElement("span");
+      handle.className = `re-form-control-handle re-form-control-handle-${key}`;
+      handle.contentEditable = "false";
+      wrapper.appendChild(handle);
+    }
+
+    const defaultLabelPosition = type === "input" || type === "memo" ? "left" : "right";
+    const defaultLabelWidth = type === "input" || type === "memo" ? 72 : null;
+    this.applyFormControlLayout(wrapper, defaultLabelPosition, defaultLabelWidth);
+    this.syncFormControlLabelPositionButtons(defaultLabelPosition);
+    this.applyFormControlLabelAlign(wrapper, type, "left");
+    this.applyFormControlBorderScope(wrapper, type, "input");
+    this.syncFormControlBorderScopeButtons("input");
+    this.attachFormControlResizer(wrapper);
+
+    this.insertNodeAtCaret(wrapper);
+    this.placeCaretAroundImageWrapper(wrapper, "after");
+    this.setActiveFormControlWrapper(wrapper);
+    this.showFormControlPropsDialog(wrapper);
+    this.debouncedSave();
+  }
+
+  private getFormControlParts(wrapper: HTMLElement): { control: HTMLInputElement | HTMLTextAreaElement; label: HTMLElement } | null {
+    const input = wrapper.querySelector('.re-form-control-input input, .re-form-control-input textarea') as HTMLInputElement | HTMLTextAreaElement | null;
+    const label = wrapper.querySelector('.re-form-control-label') as HTMLElement | null;
+    if (!input || !label) {
+      return null;
+    }
+    return { control: input, label };
+  }
+
+  private resolveFormControlKind(
+    wrapper: HTMLElement,
+    control: HTMLInputElement | HTMLTextAreaElement,
+  ): "checkbox" | "radio" | "input" | "memo" {
+    const kind = wrapper.dataset.controlKind;
+    if (kind === "checkbox" || kind === "radio" || kind === "input" || kind === "memo") {
+      return kind;
+    }
+
+    if (control instanceof HTMLTextAreaElement) {
+      return "memo";
+    }
+
+    if (control.type === "radio") {
+      return "radio";
+    }
+
+    if (control.type === "text") {
+      return "input";
+    }
+
+    return "checkbox";
+  }
+
+  private formatFormControlPropsTitle(type: "checkbox" | "radio" | "input" | "memo", labelText: string): string {
+    const baseTitle = type === "radio"
+      ? "라디오 버튼 속성"
+      : type === "input"
+        ? "입력 필드 속성"
+        : type === "memo"
+          ? "메모 필드 속성"
+          : "체크박스 속성";
+
+    const normalizedLabel = labelText.trim().replace(/\s+/g, " ");
+    if (normalizedLabel.length === 0) {
+      return baseTitle;
+    }
+
+    const clippedLabel = normalizedLabel.length > 20
+      ? `${normalizedLabel.slice(0, 20)}...`
+      : normalizedLabel;
+    return `${baseTitle} - ${clippedLabel}`;
+  }
+
+  private resolveFormControlBorderScope(
+    wrapper: HTMLElement,
+    type: "checkbox" | "radio" | "input" | "memo",
+  ): "input" | "all" {
+    if (type !== "input" && type !== "memo") {
+      return "input";
+    }
+
+    return wrapper.dataset.borderScope === "all" ? "all" : "input";
+  }
+
+  private applyFormControlBorderScope(
+    wrapper: HTMLElement,
+    type: "checkbox" | "radio" | "input" | "memo",
+    scope: "input" | "all",
+  ): void {
+    wrapper.classList.remove("re-form-control-border-input", "re-form-control-border-all");
+
+    if (type !== "input" && type !== "memo") {
+      wrapper.dataset.borderScope = "input";
+      return;
+    }
+
+    const resolved = scope === "all" ? "all" : "input";
+    wrapper.dataset.borderScope = resolved;
+    wrapper.classList.add(resolved === "all" ? "re-form-control-border-all" : "re-form-control-border-input");
+  }
+
+  private syncFormControlBorderScopeButtons(scope: "input" | "all"): void {
+    const buttons = Array.from(this.formControlPropsBorderScopeField.querySelectorAll('button[data-border-scope]')) as HTMLButtonElement[];
+    for (const button of buttons) {
+      const isActive = button.dataset.borderScope === scope;
+      button.classList.toggle("re-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+    this.formControlPropsBorderScopeInput.value = scope;
+  }
+
+  public setFormControlBorderScope(scope: "input" | "all"): void {
+    const normalized = scope === "all" ? "all" : "input";
+    this.syncFormControlBorderScopeButtons(normalized);
+
+    const wrapper = this.formControlPropsTarget;
+    if (!wrapper || !wrapper.isConnected) {
+      return;
+    }
+
+    const parts = this.getFormControlParts(wrapper);
+    if (!parts) {
+      return;
+    }
+
+    const type = this.resolveFormControlKind(wrapper, parts.control);
+    if (type !== "input" && type !== "memo") {
+      return;
+    }
+
+    this.applyFormControlBorderScope(wrapper, type, normalized);
+    this.pushFormControlPropsHistory(wrapper);
+  }
+
+  private ensureFormControlId(wrapper: HTMLElement): string {
+    const existing = wrapper.dataset.controlId;
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+    const next = `fc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    wrapper.dataset.controlId = next;
+    return next;
+  }
+
+  private ensureFormControlPropsHistory(wrapper: HTMLElement): void {
+    const id = this.ensureFormControlId(wrapper);
+    if (!this.formControlPropsHistory.has(id)) {
+      this.formControlPropsHistory.set(id, { states: [wrapper.outerHTML], index: 0 });
+    }
+  }
+
+  private pushFormControlPropsHistory(wrapper: HTMLElement): void {
+    const id = this.ensureFormControlId(wrapper);
+    const current = this.formControlPropsHistory.get(id) ?? { states: [wrapper.outerHTML], index: 0 };
+    const html = wrapper.outerHTML;
+    if (current.states[current.index] === html) {
+      this.formControlPropsHistory.set(id, current);
+      return;
+    }
+
+    const nextStates = current.states.slice(0, current.index + 1);
+    nextStates.push(html);
+    const trimmed = nextStates.slice(-30);
+    this.formControlPropsHistory.set(id, { states: trimmed, index: trimmed.length - 1 });
+  }
+
+  private replaceFormControlFromHtml(current: HTMLElement, html: string): HTMLElement | null {
+    const template = document.createElement("template");
+    template.innerHTML = html.trim();
+    const next = template.content.firstElementChild as HTMLElement | null;
+    if (!next) {
+      return null;
+    }
+
+    current.replaceWith(next);
+    this.attachFormControlResizer(next);
+    return next;
+  }
+
+  private resolveFormControlLabelPosition(
+    wrapper: HTMLElement,
+    type: "checkbox" | "radio" | "input" | "memo",
+  ): "left" | "right" | "top" | "bottom" {
+    const raw = wrapper.dataset.labelPosition;
+    if (raw === "left" || raw === "right" || raw === "top" || raw === "bottom") {
+      return raw;
+    }
+    return type === "input" || type === "memo" ? "left" : "right";
+  }
+
+  private syncFormControlLabelPositionButtons(position: "left" | "right" | "top" | "bottom"): void {
+    const buttons = Array.from(this.formControlPropsLabelPositionField.querySelectorAll('button[data-position]')) as HTMLButtonElement[];
+    for (const button of buttons) {
+      const isActive = button.dataset.position === position;
+      button.classList.toggle("re-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+    this.formControlPropsLabelPositionInput.value = position;
+  }
+
+  private readFormControlLabelWidth(): number | null {
+    const parsed = Number.parseInt(this.formControlPropsLabelWidthInput.value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  public setFormControlLabelPosition(position: "left" | "right" | "top" | "bottom"): void {
+    const normalized = position === "left" || position === "right" || position === "top" || position === "bottom"
+      ? position
+      : "left";
+    this.syncFormControlLabelPositionButtons(normalized);
+
+    const wrapper = this.formControlPropsTarget;
+    if (!wrapper || !wrapper.isConnected) {
+      return;
+    }
+
+    const parts = this.getFormControlParts(wrapper);
+    if (!parts) {
+      return;
+    }
+
+    const type = this.resolveFormControlKind(wrapper, parts.control);
+    this.applyFormControlLayout(wrapper, normalized, this.readFormControlLabelWidth());
+    this.applyFormControlLabelAlign(wrapper, type, this.resolveFormControlLabelAlign(wrapper, type));
+    this.pushFormControlPropsHistory(wrapper);
+  }
+
+  private resolveFormControlLabelAlign(
+    wrapper: HTMLElement,
+    type: "checkbox" | "radio" | "input" | "memo",
+  ): "left" | "center" | "right" {
+    if (type !== "input" && type !== "memo") {
+      return "left";
+    }
+
+    const raw = wrapper.dataset.labelAlign;
+    if (raw === "left" || raw === "center" || raw === "right") {
+      return raw;
+    }
+
+    const label = wrapper.querySelector('.re-form-control-label') as HTMLElement | null;
+    const computed = label ? window.getComputedStyle(label) : null;
+    return this.normalizeHorizontalAlign(label?.style.textAlign || computed?.textAlign || "", "left");
+  }
+
+  private syncFormControlLabelAlignButtons(align: "left" | "center" | "right"): void {
+    const buttons = Array.from(this.formControlPropsLabelAlignField.querySelectorAll('button[data-align]')) as HTMLButtonElement[];
+    for (const button of buttons) {
+      const isActive = button.dataset.align === align;
+      button.classList.toggle("re-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+    this.formControlPropsLabelAlignInput.value = align;
+  }
+
+  private applyFormControlLabelAlign(
+    wrapper: HTMLElement,
+    type: "checkbox" | "radio" | "input" | "memo",
+    align: "left" | "center" | "right",
+  ): void {
+    const label = wrapper.querySelector('.re-form-control-label') as HTMLElement | null;
+    if (!label) {
+      return;
+    }
+
+    if (type === "input" || type === "memo") {
+      const resolved = align === "center" || align === "right" ? align : "left";
+      wrapper.dataset.labelAlign = resolved;
+      label.style.textAlign = resolved;
+      return;
+    }
+
+    delete wrapper.dataset.labelAlign;
+    label.style.removeProperty("text-align");
+  }
+
+  public setFormControlLabelAlign(align: "left" | "center" | "right"): void {
+    const normalized = align === "center" || align === "right" ? align : "left";
+    this.syncFormControlLabelAlignButtons(normalized);
+
+    const wrapper = this.formControlPropsTarget;
+    if (!wrapper || !wrapper.isConnected) {
+      return;
+    }
+
+    const parts = this.getFormControlParts(wrapper);
+    if (!parts) {
+      return;
+    }
+
+    const type = this.resolveFormControlKind(wrapper, parts.control);
+    if (type !== "input" && type !== "memo") {
+      return;
+    }
+
+    this.applyFormControlLabelAlign(wrapper, type, normalized);
+    this.pushFormControlPropsHistory(wrapper);
+  }
+
+  private syncFontSelectValue(select: HTMLSelectElement, target: string, fallbackValue: string): void {
+    const normalized = target.replace(/["']/g, "").toLowerCase();
+    const firstToken = normalized.split(",")[0]?.trim() ?? "";
+    let matched = false;
+    for (const option of Array.from(select.options)) {
+      const optionNormalized = option.value.replace(/["']/g, "").toLowerCase();
+      const optionFirstToken = optionNormalized.split(",")[0]?.trim() ?? "";
+      if (optionNormalized === normalized || (firstToken.length > 0 && optionFirstToken === firstToken)) {
+        select.value = option.value;
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) {
+      select.value = fallbackValue;
+    }
+  }
+
+  private applyFormControlLayout(
+    wrapper: HTMLElement,
+    position: "left" | "right" | "top" | "bottom",
+    labelWidthPx: number | null,
+  ): void {
+    const label = wrapper.querySelector('.re-form-control-label') as HTMLElement | null;
+    if (!label) {
+      return;
+    }
+
+    wrapper.classList.remove(
+      're-form-control-pos-left',
+      're-form-control-pos-right',
+      're-form-control-pos-top',
+      're-form-control-pos-bottom',
+    );
+    wrapper.classList.add(`re-form-control-pos-${position}`);
+    wrapper.dataset.labelPosition = position;
+
+    if (labelWidthPx === 0) {
+      wrapper.classList.add("re-form-control-label-hidden");
+      wrapper.dataset.labelHidden = "true";
+      label.style.removeProperty("width");
+    } else if (labelWidthPx && Number.isFinite(labelWidthPx) && labelWidthPx > 0) {
+      wrapper.classList.remove("re-form-control-label-hidden");
+      delete wrapper.dataset.labelHidden;
+      label.style.width = `${Math.round(labelWidthPx)}px`;
+    } else {
+      wrapper.classList.remove("re-form-control-label-hidden");
+      delete wrapper.dataset.labelHidden;
+      label.style.removeProperty('width');
+    }
+
+    const parts = this.getFormControlParts(wrapper);
+    if (parts) {
+      const type = this.resolveFormControlKind(wrapper, parts.control);
+      wrapper.classList.toggle('re-form-control-stretch', type === 'input' || type === 'memo');
+    }
+  }
+
+  private attachFormControlResizer(wrapper: HTMLElement): void {
+    const handles = Array.from(wrapper.querySelectorAll('.re-form-control-handle')) as HTMLElement[];
+    for (const handle of handles) {
+      const className = handle.className;
+      const key = className.includes('nw')
+        ? 'nw'
+        : className.includes('ne')
+          ? 'ne'
+          : className.includes('sw')
+            ? 'sw'
+            : 'se';
+
+      handle.addEventListener('mousedown', (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const startRect = wrapper.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+
+        const onMove = (moveEvent: MouseEvent): void => {
+          const deltaX = moveEvent.clientX - startX;
+          const deltaY = moveEvent.clientY - startY;
+
+          const rawWidth = key.includes('e') ? startRect.width + deltaX : startRect.width - deltaX;
+          const rawHeight = key.includes('s') ? startRect.height + deltaY : startRect.height - deltaY;
+          const nextWidth = Math.max(80, Math.round(rawWidth));
+          const nextHeight = Math.max(26, Math.round(rawHeight));
+
+          const parts = this.getFormControlParts(wrapper);
+          if (!parts) {
+            return;
+          }
+          const type = this.resolveFormControlKind(wrapper, parts.control);
+
+          wrapper.style.width = `${nextWidth}px`;
+          if (type === 'memo' && parts.control instanceof HTMLTextAreaElement) {
+            parts.control.style.height = `${Math.max(54, nextHeight - 12)}px`;
+          }
+          if (type === 'input' && parts.control instanceof HTMLInputElement && parts.control.type === 'text') {
+            parts.control.style.height = `${Math.max(24, nextHeight - 8)}px`;
+          }
+        };
+
+        const onUp = (): void => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          this.debouncedSave();
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    }
+  }
+
+  private showFormControlPropsDialog(wrapper: HTMLElement): void {
+    const parts = this.getFormControlParts(wrapper);
+    const shell = this.root.querySelector('.re-shell') as HTMLElement | null;
+    if (!parts || !shell) {
+      return;
+    }
+
+    const type = this.resolveFormControlKind(wrapper, parts.control);
+    this.ensureFormControlPropsHistory(wrapper);
+    const labelPosition = this.resolveFormControlLabelPosition(wrapper, type);
+    const labelAlign = this.resolveFormControlLabelAlign(wrapper, type);
+    const borderScope = this.resolveFormControlBorderScope(wrapper, type);
+    const currentLabelText = parts.label.textContent ?? "";
+    this.formControlPropsTarget = wrapper;
+    this.formControlPropsTitle.textContent = this.formatFormControlPropsTitle(type, currentLabelText);
+    this.formControlPropsLabelInput.value = currentLabelText;
+    const labelComputed = getComputedStyle(parts.label);
+    this.syncFontSelectValue(
+      this.formControlPropsLabelFontNameSelect,
+      parts.label.style.fontFamily || labelComputed.fontFamily || "",
+      this.formControlPropsLabelFontNameSelect.options[0]?.value ?? "'Calibri', 'Segoe UI', sans-serif",
+    );
+    this.syncFontSelectValue(
+      this.formControlPropsLabelFontSizeSelect,
+      parts.label.style.fontSize || labelComputed.fontSize || "",
+      this.formControlPropsLabelFontSizeSelect.options[1]?.value ?? "13px",
+    );
+    const nextLabelColor = this.normalizeColorToHex(parts.label.style.color || labelComputed.color || '') ?? '#111827';
+    this.setFormControlColor('label', nextLabelColor);
+    const nextLabelBgColor = this.normalizeColorToHex(parts.label.style.backgroundColor || labelComputed.backgroundColor || '') ?? '#ffffff';
+    this.setFormControlColor('labelBg', nextLabelBgColor);
+    this.syncFormControlLabelPositionButtons(labelPosition);
+    const labelHidden = wrapper.classList.contains("re-form-control-label-hidden") || wrapper.dataset.labelHidden === "true";
+    const currentLabelWidth = Number.parseInt(parts.label.style.width.replace('px', ''), 10);
+    const labelWidthField = this.formControlPropsLabelWidthInput.closest('label') as HTMLElement | null;
+    this.formControlPropsLabelWidthInput.value = labelHidden
+      ? "0"
+      : Number.isFinite(currentLabelWidth)
+        ? String(currentLabelWidth)
+        : '';
+    this.formControlPropsLabelAlignField.hidden = !(type === 'input' || type === 'memo');
+    this.syncFormControlLabelAlignButtons(labelAlign);
+    this.syncFormControlBorderScopeButtons(borderScope);
+    const valueComputed = getComputedStyle(parts.control);
+    this.syncFontSelectValue(
+      this.formControlPropsValueFontNameSelect,
+      parts.control.style.fontFamily || valueComputed.fontFamily || "",
+      this.formControlPropsValueFontNameSelect.options[0]?.value ?? "'Calibri', 'Segoe UI', sans-serif",
+    );
+    this.syncFontSelectValue(
+      this.formControlPropsValueFontSizeSelect,
+      parts.control.style.fontSize || valueComputed.fontSize || "",
+      this.formControlPropsValueFontSizeSelect.options[1]?.value ?? "13px",
+    );
+    const nextValueColor = this.normalizeColorToHex(parts.control.style.color || valueComputed.color || '') ?? '#111827';
+    this.setFormControlColor('value', nextValueColor);
+    if (parts.control instanceof HTMLInputElement) {
+      this.formControlPropsValueInput.value = parts.control.value ?? '';
+      this.formControlPropsCheckedInput.checked = parts.control.checked;
+      this.formControlPropsDisabledInput.checked = parts.control.disabled;
+      this.formControlPropsPlaceholderInput.value = parts.control.placeholder ?? '';
+    } else {
+      this.formControlPropsValueInput.value = parts.control.value ?? '';
+      this.formControlPropsCheckedInput.checked = false;
+      this.formControlPropsDisabledInput.checked = parts.control.disabled;
+      this.formControlPropsPlaceholderInput.value = parts.control.placeholder ?? '';
+    }
+    const isChoiceType = type === 'checkbox' || type === 'radio';
+    const isTextType = type === 'input' || type === 'memo';
+    this.formControlPropsCheckedField.hidden = !isChoiceType;
+    this.formControlPropsPlaceholderField.hidden = !isTextType;
+    this.formControlPropsValueFontField.hidden = !isTextType;
+    this.formControlPropsValueFontColorField.hidden = !isTextType;
+    this.formControlPropsBorderScopeField.hidden = !isTextType;
+    this.syncFormControlBorderScopeButtons(borderScope);
+    this.formControlPropsValueField.hidden = isChoiceType;
+    this.formControlPropsDisabledField.hidden = false;
+    this.formControlPropsLabelFontColorField.hidden = false;
+    this.formControlPropsLabelBgColorField.hidden = false;
+    this.formControlPropsBasicSection.hidden = false;
+    this.formControlPropsLabelStyleSection.hidden = false;
+    this.formControlPropsLabelPositionField.hidden = isChoiceType;
+    if (labelWidthField) {
+      labelWidthField.hidden = isChoiceType;
+    }
+    this.formControlPropsTextSection.hidden = !isTextType;
+    this.formControlPropsChoiceSection.hidden = !isChoiceType;
+    this.formControlPropsLabelAlignField.hidden = isChoiceType || !(type === 'input' || type === 'memo');
+    this.reorderFormControlPropsFields(type);
+    this.hideFormControlColorPalette();
+
+    this.formControlPropsDialog.hidden = false;
+    this.formControlPropsDialog.style.visibility = 'hidden';
+    positionPopupNearAnchor(shell, wrapper, this.formControlPropsDialog, { centerAnchor: true });
+    this.formControlPropsDialog.style.visibility = '';
+    this.formControlPropsLabelInput.focus();
+    this.formControlPropsLabelInput.select();
+  }
+
+  private reorderFormControlPropsFields(type: 'checkbox' | 'radio' | 'input' | 'memo'): void {
+    const labelField = this.formControlPropsLabelInput.closest('label') as HTMLElement | null;
+    const labelFontField = this.formControlPropsLabelFontNameSelect.closest('label') as HTMLElement | null;
+    const labelPositionField = this.formControlPropsLabelPositionField;
+    const labelWidthField = this.formControlPropsLabelWidthInput.closest('label') as HTMLElement | null;
+    const actionsField = this.formControlPropsDialog.querySelector('.re-form-control-props-actions') as HTMLElement | null;
+
+    const fieldOrder = new Map<HTMLElement, number>();
+
+    const setOrder = (element: HTMLElement | null, order: number): void => {
+      if (!element) {
+        return;
+      }
+      fieldOrder.set(element, order);
+    };
+
+    const isChoiceType = type === 'checkbox' || type === 'radio';
+
+    setOrder(this.formControlPropsBasicSection, 5);
+    setOrder(labelField, 10);
+    setOrder(this.formControlPropsValueField, isChoiceType ? 20 : 35);
+    setOrder(this.formControlPropsDisabledField, 55);
+    setOrder(this.formControlPropsTextSection, isChoiceType ? 85 : 25);
+    setOrder(this.formControlPropsBorderScopeField, isChoiceType ? 90 : 26);
+    setOrder(this.formControlPropsPlaceholderField, isChoiceType ? 91 : 30);
+    setOrder(this.formControlPropsValueFontField, isChoiceType ? 92 : 40);
+    setOrder(this.formControlPropsValueFontColorField, isChoiceType ? 93 : 50);
+    setOrder(this.formControlPropsChoiceSection, isChoiceType ? 25 : 85);
+    setOrder(this.formControlPropsCheckedField, isChoiceType ? 30 : 90);
+    setOrder(this.formControlPropsLabelStyleSection, 60);
+    setOrder(labelFontField, 70);
+    setOrder(this.formControlPropsLabelFontColorField, 71);
+    setOrder(this.formControlPropsLabelBgColorField, 72);
+    setOrder(labelPositionField, 73);
+    setOrder(labelWidthField, 74);
+    setOrder(this.formControlPropsLabelAlignField, 75);
+    setOrder(actionsField, 200);
+
+    for (const [element, order] of fieldOrder.entries()) {
+      element.style.order = String(order);
+    }
+  }
+
+  private hideFormControlPropsDialog(): void {
+    this.formControlPropsDialog.hidden = true;
+    this.hideFormControlColorPalette();
+    if (this.colorPaletteOwner === "formControlLabelBg" || this.colorPaletteOwner === "formControlValueColor") {
+      this.colorPalette.hidden = true;
+      this.endToolbarInteraction();
+    }
+    this.formControlPropsTarget = null;
+  }
+
+  private renderFormControlColorPalette(): void {
+    this.formControlColorThemeColorGrid.innerHTML = "";
+    this.formControlColorStandardColorGrid.innerHTML = "";
+
+    for (const color of THEME_COLOR_SWATCHES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "re-color-swatch";
+      button.dataset.action = "applyFormControlColor";
+      button.dataset.colorValue = color;
+      button.title = color;
+      button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
+      this.formControlColorThemeColorGrid.appendChild(button);
+    }
+
+    for (const color of STANDARD_COLOR_SWATCHES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "re-color-swatch re-color-swatch-standard";
+      button.dataset.action = "applyFormControlColor";
+      button.dataset.colorValue = color;
+      button.title = color;
+      button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
+      this.formControlColorStandardColorGrid.appendChild(button);
+    }
+
+    this.renderRecentFormControlColors();
+    this.formControlColorMoreColorInput.addEventListener("change", () => {
+      const value = this.formControlColorMoreColorInput.value;
+      if (!value) {
+        return;
+      }
+      this.applyFormControlColor(value);
+      this.formControlColorMoreColorInput.value = "";
+    });
+  }
+
+  private renderRecentFormControlColors(): void {
+    this.formControlColorRecentColorGrid.innerHTML = "";
+    for (let index = 0; index < 10; index += 1) {
+      const color = this.recentFormControlColors[index] ?? null;
+      const button = document.createElement("button");
+      button.type = "button";
+      if (!color) {
+        button.className = "re-color-swatch re-color-swatch-empty";
+        button.disabled = true;
+        button.title = "최근 색상 없음";
+      } else {
+        button.className = "re-color-swatch";
+        button.dataset.action = "applyFormControlColor";
+        button.dataset.colorValue = color;
+        button.title = color;
+        button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
+      }
+      this.formControlColorRecentColorGrid.appendChild(button);
+    }
+  }
+
+  private pushRecentFormControlColor(color: string): void {
+    const normalized = this.normalizeColorToHex(color);
+    if (!normalized) {
+      return;
+    }
+
+    const index = this.recentFormControlColors.indexOf(normalized);
+    if (index >= 0) {
+      this.recentFormControlColors.splice(index, 1);
+    }
+    this.recentFormControlColors.unshift(normalized);
+    this.recentFormControlColors.splice(10);
+    this.renderRecentFormControlColors();
+  }
+
+  private setFormControlColor(target: "label" | "value" | "labelBg", color: string): void {
+    if (target === "label") {
+      this.formControlPropsLabelFontColorInput.value = color;
+      this.formControlLabelColorChip.style.background = color;
+    } else if (target === "labelBg") {
+      this.formControlPropsLabelBgColorInput.value = color;
+      this.formControlLabelBgColorChip.style.background = color;
+    } else {
+      this.formControlPropsValueFontColorInput.value = color;
+      this.formControlValueColorChip.style.background = color;
+    }
+    this.formControlColorAutomaticChip.style.background = color;
+  }
+
+  private toggleToolbarBgPaletteForFormControlLabel(): void {
+    const anchor = this.formControlPropsDialog.querySelector('[data-action="toggleFormControlColorPalette"][data-target="labelBg"]') as HTMLButtonElement | null;
+    if (!anchor) {
+      return;
+    }
+
+    const isSameOwner = this.colorPaletteOwner === "formControlLabelBg";
+    const isSameAnchor = this.colorPaletteAnchorButton === anchor;
+    if (!this.colorPalette.hidden && isSameOwner && isSameAnchor) {
+      this.colorPalette.hidden = true;
+      this.endToolbarInteraction();
+      return;
+    }
+
+    this.hideFormControlColorPalette();
+    this.colorPaletteOwner = "formControlLabelBg";
+    this.colorPaletteAnchorButton = anchor;
+    this.colorPalette.dataset.mode = "hiliteColor";
+    this.syncColorPaletteModeUi("hiliteColor");
+    this.refreshRecentColorSwatches();
+    this.textColorButton.classList.remove("re-active");
+    this.bgColorButton.classList.remove("re-active");
+
+    const moreColorInput = this.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+    const current = this.normalizeColorToHex(this.formControlPropsLabelBgColorInput.value) ?? "#ffffff";
+    if (moreColorInput) {
+      moreColorInput.value = current;
+    }
+
+    if (this.colorPalette.hidden) {
+      this.colorPalette.hidden = false;
+      this.colorPalette.style.visibility = "hidden";
+      this.positionColorPalette();
+      this.colorPalette.style.visibility = "";
+      return;
+    }
+
+    this.positionColorPalette();
+  }
+
+  private toggleToolbarTextPaletteForFormControlValue(): void {
+    const anchor = this.formControlPropsDialog.querySelector('[data-action="toggleFormControlColorPalette"][data-target="value"]') as HTMLButtonElement | null;
+    if (!anchor) {
+      return;
+    }
+
+    const isSameOwner = this.colorPaletteOwner === "formControlValueColor";
+    const isSameAnchor = this.colorPaletteAnchorButton === anchor;
+    if (!this.colorPalette.hidden && isSameOwner && isSameAnchor) {
+      this.colorPalette.hidden = true;
+      this.endToolbarInteraction();
+      return;
+    }
+
+    this.hideFormControlColorPalette();
+    this.colorPaletteOwner = "formControlValueColor";
+    this.colorPaletteAnchorButton = anchor;
+    this.colorPalette.dataset.mode = "foreColor";
+    this.syncColorPaletteModeUi("foreColor");
+    this.refreshRecentColorSwatches();
+    this.textColorButton.classList.remove("re-active");
+    this.bgColorButton.classList.remove("re-active");
+
+    const moreColorInput = this.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+    const current = this.normalizeColorToHex(this.formControlPropsValueFontColorInput.value) ?? "#111827";
+    if (moreColorInput) {
+      moreColorInput.value = current;
+    }
+
+    if (this.colorPalette.hidden) {
+      this.colorPalette.hidden = false;
+      this.colorPalette.style.visibility = "hidden";
+      this.positionColorPalette();
+      this.colorPalette.style.visibility = "";
+      return;
+    }
+
+    this.positionColorPalette();
+  }
+
+  private applyFormControlLabelBgColorFromToolbarPalette(color: string): void {
+    this.setFormControlColor("labelBg", color);
+    this.pushRecentFormControlColor(color);
+    this.colorPalette.hidden = true;
+    this.endToolbarInteraction();
+  }
+
+  private applyFormControlLabelBgAutomaticFromToolbarPalette(): void {
+    this.applyFormControlLabelBgColorFromToolbarPalette("#ffffff");
+  }
+
+  private applyFormControlValueColorFromToolbarPalette(color: string): void {
+    this.setFormControlColor("value", color);
+    this.pushRecentFormControlColor(color);
+    this.colorPalette.hidden = true;
+    this.endToolbarInteraction();
+  }
+
+  private applyFormControlValueColorAutomaticFromToolbarPalette(): void {
+    this.applyFormControlValueColorFromToolbarPalette("#111827");
+  }
+
+  private async pickFormControlLabelBgFromEyedropper(): Promise<void> {
+    const EyeDropperCtor = (window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper;
+    if (!EyeDropperCtor) {
+      this.showSaveStatus("스포이드를 지원하지 않는 브라우저입니다");
+      return;
+    }
+
+    try {
+      const picker = new EyeDropperCtor();
+      const result = await picker.open();
+      this.applyFormControlLabelBgColorFromToolbarPalette(result.sRGBHex);
+    } catch {
+      // 사용자 취소는 조용히 무시한다.
+    }
+  }
+
+  private async pickFormControlValueColorFromEyedropper(): Promise<void> {
+    const EyeDropperCtor = (window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper;
+    if (!EyeDropperCtor) {
+      this.showSaveStatus("스포이드를 지원하지 않는 브라우저입니다");
+      return;
+    }
+
+    try {
+      const picker = new EyeDropperCtor();
+      const result = await picker.open();
+      this.applyFormControlValueColorFromToolbarPalette(result.sRGBHex);
+    } catch {
+      // 사용자 취소는 조용히 무시한다.
+    }
+  }
+
+  private toggleFormControlColorPalette(target: "label" | "value" | "labelBg"): void {
+    if (target === "labelBg") {
+      this.toggleToolbarBgPaletteForFormControlLabel();
+      return;
+    }
+
+    if (target === "value") {
+      this.toggleToolbarTextPaletteForFormControlValue();
+      return;
+    }
+
+    const shell = this.formControlPropsDialog;
+    const anchor = this.formControlPropsDialog.querySelector(`[data-action="toggleFormControlColorPalette"][data-target="${target}"]`) as HTMLElement | null;
+    if (!shell || !anchor) {
+      return;
+    }
+
+    if (!this.formControlColorPalette.hidden && this.formControlColorTarget === target) {
+      this.hideFormControlColorPalette();
+      return;
+    }
+
+    this.formControlColorTarget = target;
+    const current = target === "label"
+      ? this.formControlPropsLabelFontColorInput.value
+      : this.formControlPropsValueFontColorInput.value;
+    this.formControlColorMoreColorInput.value = this.normalizeColorToHex(current) ?? "#111827";
+    this.formControlColorAutomaticChip.style.background = current;
+
+    this.formControlColorPalette.hidden = false;
+    this.formControlColorPalette.style.visibility = 'hidden';
+    this.formControlColorPalette.style.position = 'fixed';
+    const anchorRect = anchor.getBoundingClientRect();
+    const paletteRect = this.formControlColorPalette.getBoundingClientRect();
+    const gap = 8;
+    const minLeft = gap;
+    const maxLeft = Math.max(minLeft, window.innerWidth - paletteRect.width - gap);
+    const preferredLeft = anchorRect.left + (anchorRect.width / 2) - (paletteRect.width / 2);
+    const left = Math.min(maxLeft, Math.max(minLeft, preferredLeft));
+    const belowTop = anchorRect.bottom + gap;
+    const aboveTop = anchorRect.top - paletteRect.height - gap;
+    const maxTop = Math.max(gap, window.innerHeight - paletteRect.height - gap);
+    const top = belowTop + paletteRect.height <= window.innerHeight - gap
+      ? belowTop
+      : Math.max(gap, Math.min(maxTop, aboveTop));
+    this.formControlColorPalette.style.left = `${left}px`;
+    this.formControlColorPalette.style.top = `${top}px`;
+    this.formControlColorPalette.style.visibility = '';
+  }
+
+  private hideFormControlColorPalette(): void {
+    this.formControlColorPalette.hidden = true;
+  }
+
+  private applyFormControlColor(color: string): void {
+    this.setFormControlColor(this.formControlColorTarget, color);
+    this.pushRecentFormControlColor(color);
+    this.hideFormControlColorPalette();
+  }
+
+  private applyFormControlColorAutomatic(): void {
+    const fallback = "#111827";
+    this.setFormControlColor(this.formControlColorTarget, fallback);
+    this.hideFormControlColorPalette();
+  }
+
+  private openFormControlMoreColors(): void {
+    this.formControlColorMoreColorInput.click();
+  }
+
+  private applyFormControlProps(): void {
+    const wrapper = this.formControlPropsTarget;
+    if (!wrapper || !wrapper.isConnected) {
+      this.hideFormControlPropsDialog();
+      return;
+    }
+
+    const parts = this.getFormControlParts(wrapper);
+    if (!parts) {
+      this.hideFormControlPropsDialog();
+      return;
+    }
+
+    const type = this.resolveFormControlKind(wrapper, parts.control);
+    const fallbackLabel = type === 'radio' ? '선택지' : type === 'input' ? '입력 항목' : type === 'memo' ? '메모' : '체크 항목';
+    const nextLabel = this.formControlPropsLabelInput.value.trim();
+    parts.label.textContent = nextLabel.length > 0 ? nextLabel : fallbackLabel;
+
+    const nextLabelPositionValue = this.formControlPropsLabelPositionInput.value;
+    const nextLabelPosition = (
+      nextLabelPositionValue === 'left'
+      || nextLabelPositionValue === 'right'
+      || nextLabelPositionValue === 'top'
+      || nextLabelPositionValue === 'bottom'
+    )
+      ? nextLabelPositionValue
+      : this.resolveFormControlLabelPosition(wrapper, type);
+    const nextLabelWidth = this.readFormControlLabelWidth();
+    this.applyFormControlLayout(wrapper, nextLabelPosition, nextLabelWidth);
+    parts.label.style.fontFamily = this.formControlPropsLabelFontNameSelect.value;
+    parts.label.style.fontSize = this.formControlPropsLabelFontSizeSelect.value;
+    parts.label.style.color = this.formControlPropsLabelFontColorInput.value;
+    parts.label.style.backgroundColor = this.formControlPropsLabelBgColorInput.value;
+    if (type === 'input' || type === 'memo') {
+      const nextLabelAlign = this.formControlPropsLabelAlignInput.value === 'center' || this.formControlPropsLabelAlignInput.value === 'right'
+        ? this.formControlPropsLabelAlignInput.value
+        : 'left';
+      this.applyFormControlLabelAlign(wrapper, type, nextLabelAlign);
+    }
+
+    const nextValue = this.formControlPropsValueInput.value.trim();
+    parts.control.value = nextValue;
+    parts.control.disabled = this.formControlPropsDisabledInput.checked;
+
+    if (parts.control instanceof HTMLInputElement) {
+      if (type === 'checkbox' || type === 'radio') {
+        parts.control.checked = this.formControlPropsCheckedInput.checked;
+      }
+      if (type === 'input') {
+        parts.control.placeholder = this.formControlPropsPlaceholderInput.value.trim();
+      }
+    } else if (type === 'memo') {
+      parts.control.placeholder = this.formControlPropsPlaceholderInput.value.trim();
+    }
+
+    if (type === 'input' || type === 'memo') {
+      parts.control.style.fontFamily = this.formControlPropsValueFontNameSelect.value;
+      parts.control.style.fontSize = this.formControlPropsValueFontSizeSelect.value;
+      parts.control.style.color = this.formControlPropsValueFontColorInput.value;
+      const borderScope = this.formControlPropsBorderScopeInput.value === 'all' ? 'all' : 'input';
+      this.applyFormControlBorderScope(wrapper, type, borderScope);
+    }
+
+    this.placeCaretAroundImageWrapper(wrapper, 'after');
+    this.setActiveFormControlWrapper(wrapper);
+    this.pushFormControlPropsHistory(wrapper);
+    this.hideFormControlPropsDialog();
+    this.captureSelection();
+    this.updateToolbarState();
+    this.debouncedSave();
+  }
+
+  private undoFormControlProps(): void {
+    this.applyFormControlPropsHistory("undo", true);
+  }
+
+  private redoFormControlProps(): void {
+    this.applyFormControlPropsHistory("redo", true);
+  }
+
+  private resolveFormControlHistoryTarget(): HTMLElement | null {
+    const dialogTarget = this.formControlPropsTarget;
+    if (dialogTarget && dialogTarget.isConnected) {
+      return dialogTarget;
+    }
+
+    const activeTarget = this.activeFormControlWrapper;
+    if (activeTarget && activeTarget.isConnected) {
+      return activeTarget;
+    }
+
+    const range = this.getActiveEditorRange();
+    if (!range) {
+      return null;
+    }
+
+    const startEl = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+    const fromSelection = startEl?.closest(".re-form-control-wrap") as HTMLElement | null;
+    if (!fromSelection || !this.editor.contains(fromSelection)) {
+      return null;
+    }
+
+    return fromSelection;
+  }
+
+  private applyFormControlPropsHistory(command: "undo" | "redo", reopenDialog: boolean): boolean {
+    const wrapper = this.resolveFormControlHistoryTarget();
+    if (!wrapper) {
+      return false;
+    }
+
+    const id = this.ensureFormControlId(wrapper);
+    const history = this.formControlPropsHistory.get(id);
+    if (!history) {
+      return false;
+    }
+
+    const nextIndex = command === "undo" ? history.index - 1 : history.index + 1;
+    if (nextIndex < 0 || nextIndex >= history.states.length) {
+      return false;
+    }
+
+    const wasDialogBoundToTarget = !this.formControlPropsDialog.hidden && this.formControlPropsTarget === wrapper;
+    history.index = nextIndex;
+    const replaced = this.replaceFormControlFromHtml(wrapper, history.states[nextIndex]);
+    if (!replaced) {
+      return false;
+    }
+
+    if (this.formControlPropsTarget === wrapper) {
+      this.formControlPropsTarget = replaced;
+    }
+
+    this.placeCaretAroundImageWrapper(replaced, "after");
+    this.setActiveFormControlWrapper(replaced);
+
+    if (reopenDialog || wasDialogBoundToTarget) {
+      this.showFormControlPropsDialog(replaced);
+    }
+
+    this.captureSelection();
+    this.updateToolbarState();
+    this.debouncedSave();
+    return true;
+  }
+
   private attachImageResizer(wrapper: HTMLElement, img: HTMLImageElement): void {
     const points: Array<"nw" | "ne" | "sw" | "se"> = ["nw", "ne", "sw", "se"];
 
@@ -3794,6 +5712,14 @@ export class RichEditor {
     }
 
     const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      for (const node of nodes) {
+        this.editor.appendChild(node);
+      }
+      this.captureSelection();
+      return;
+    }
+
     range.deleteContents();
 
     const fragment = document.createDocumentFragment();
@@ -3876,9 +5802,29 @@ export class RichEditor {
 
   private renderColorPalette(): void {
     renderColorSwatches(this.root);
+    this.syncColorPaletteModeUi("foreColor");
+    this.refreshRecentColorSwatches();
   }
 
-  private toggleColorPalette(): void {
+  private toggleColorPalette(mode: "foreColor" | "hiliteColor"): void {
+    this.colorPaletteOwner = "toolbar";
+    const nextAnchor = mode === "foreColor" ? this.textColorButton : this.bgColorButton;
+    const isSameAnchor = this.colorPaletteAnchorButton === nextAnchor;
+    const isOpen = !this.colorPalette.hidden;
+
+    this.colorPalette.dataset.mode = mode;
+    this.syncColorPaletteModeUi(mode);
+    this.refreshRecentColorSwatches();
+    this.textColorButton.classList.toggle("re-active", mode === "foreColor");
+    this.bgColorButton.classList.toggle("re-active", mode === "hiliteColor");
+
+    if (isOpen && isSameAnchor) {
+      this.colorPalette.hidden = true;
+      this.endToolbarInteraction();
+      return;
+    }
+
+    this.colorPaletteAnchorButton = nextAnchor;
     if (this.colorPalette.hidden) {
       // 오픈 직전에 툴바 상태를 갱신해 팔레트 selected 표시를 최신화한다.
       this.updateToolbarState();
@@ -3886,13 +5832,90 @@ export class RichEditor {
       this.colorPalette.style.visibility = "hidden";
       this.positionColorPalette();
       this.colorPalette.style.visibility = "";
-      this.colorPaletteButton.classList.add("re-active");
       return;
     }
 
-    this.colorPalette.hidden = true;
-    this.colorPaletteButton.classList.remove("re-active");
-    this.endToolbarInteraction();
+    this.positionColorPalette();
+  }
+
+  private syncColorPaletteModeUi(mode: "foreColor" | "hiliteColor"): void {
+    const label = this.colorPalette.querySelector('[data-role="automaticColorLabel"]') as HTMLSpanElement | null;
+    const chip = this.colorPalette.querySelector('[data-role="automaticColorChip"]') as HTMLSpanElement | null;
+    if (!label || !chip) {
+      return;
+    }
+
+    if (mode === "hiliteColor") {
+      label.textContent = "색 없음";
+      chip.classList.add("is-transparent");
+      return;
+    }
+
+    label.textContent = "자동";
+    chip.classList.remove("is-transparent");
+  }
+
+  private pushRecentPaletteColor(role: FormattingRole, value: string): void {
+    const normalized = this.normalizeColorToHex(value);
+    if (!normalized || value === "transparent") {
+      return;
+    }
+
+    const target = role === "hiliteColor" ? this.recentBgColors : this.recentTextColors;
+    const lower = normalized.toLowerCase();
+    const filtered = target.filter((item) => item.toLowerCase() !== lower);
+    filtered.unshift(normalized);
+    target.splice(0, target.length, ...filtered.slice(0, 10));
+    this.refreshRecentColorSwatches();
+  }
+
+  private refreshRecentColorSwatches(): void {
+    const grid = this.colorPalette.querySelector('[data-role="recentColorGrid"]') as HTMLDivElement | null;
+    if (!grid) {
+      return;
+    }
+
+    const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
+    const source = mode === "hiliteColor" ? this.recentBgColors : this.recentTextColors;
+    const swatches = Array.from(grid.querySelectorAll("button")) as HTMLButtonElement[];
+
+    for (let index = 0; index < swatches.length; index += 1) {
+      const button = swatches[index];
+      const color = source[index];
+      if (!color) {
+        button.disabled = true;
+        button.classList.add("re-color-swatch-empty");
+        button.removeAttribute("data-color-value");
+        button.title = "최근 색상 없음";
+        button.innerHTML = "";
+        continue;
+      }
+
+      button.disabled = false;
+      button.classList.remove("re-color-swatch-empty");
+      button.dataset.colorValue = color;
+      button.title = color;
+      button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
+    }
+  }
+
+  private async pickColorFromEyedropper(): Promise<void> {
+    const EyeDropperCtor = (window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper;
+    if (!EyeDropperCtor) {
+      this.showSaveStatus("스포이드를 지원하지 않는 브라우저입니다");
+      return;
+    }
+
+    try {
+      const picker = new EyeDropperCtor();
+      const result = await picker.open();
+      const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
+      this.applyFormattingRoleChange(mode, result.sRGBHex, "palette");
+      this.pushRecentPaletteColor(mode, result.sRGBHex);
+      this.updateToolbarState();
+    } catch {
+      // 사용자 취소는 조용히 무시한다.
+    }
   }
 
   private positionColorPalette(): void {
@@ -3901,7 +5924,11 @@ export class RichEditor {
       return;
     }
 
-    positionPopupNearAnchor(shell, this.colorPaletteButton, this.colorPalette);
+    if (!this.colorPaletteAnchorButton) {
+      return;
+    }
+
+    positionPopupNearAnchor(shell, this.colorPaletteAnchorButton, this.colorPalette);
   }
 
   // 테이블 크기 picker(10x10)의 hover/drag/click 상호작용을 연결한다.
@@ -4943,9 +6970,21 @@ export class RichEditor {
   }
 
   private decorateSpecialNodes(): void {
+    for (const table of Array.from(this.editor.querySelectorAll(":scope > table"))) {
+      if (!(table instanceof HTMLTableElement) || table.parentElement !== this.editor) {
+        continue;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "re-table-wrap";
+      table.parentElement.replaceChild(wrapper, table);
+      wrapper.appendChild(table);
+    }
+
     // 복구/붙여넣기 후에는 동적으로 생성한 리사이즈 핸들이 유실될 수 있어 재장식이 필요하다.
     for (const table of Array.from(this.editor.querySelectorAll("table"))) {
       const tableElement = table as HTMLTableElement;
+      this.hydratePastedTableAttributes(tableElement);
       tableElement.classList.add("re-table");
       this.enableTableColumnResize(tableElement);
     }
@@ -4961,6 +7000,115 @@ export class RichEditor {
       image.replaceWith(wrapper);
       wrapper.appendChild(image);
       this.attachImageResizer(wrapper, image as HTMLImageElement);
+    }
+  }
+
+  private hydratePastedTableAttributes(table: HTMLTableElement): void {
+    const applySizeIfMissing = (
+      styleRef: CSSStyleDeclaration,
+      cssProp: "width" | "height" | "borderSpacing" | "padding" | "borderWidth",
+      raw: string | null,
+      options: { allowPercent?: boolean } = {},
+    ): void => {
+      if (styleRef[cssProp].trim().length > 0) {
+        return;
+      }
+      const value = raw?.trim() ?? "";
+      if (value.length === 0) {
+        return;
+      }
+      const normalized = this.normalizeCssSizeInput(value, { allowPercent: options.allowPercent === true });
+      if (normalized.length > 0) {
+        styleRef[cssProp] = normalized;
+      }
+    };
+
+    const tableAlign = this.normalizeHorizontalAlign(table.getAttribute("align") ?? "", "left");
+    if (table.style.marginLeft.length === 0 && table.style.marginRight.length === 0 && table.hasAttribute("align")) {
+      if (tableAlign === "center") {
+        table.style.marginLeft = "auto";
+        table.style.marginRight = "auto";
+      } else if (tableAlign === "right") {
+        table.style.marginLeft = "auto";
+        table.style.marginRight = "0";
+      } else {
+        table.style.marginLeft = "0";
+        table.style.marginRight = "auto";
+      }
+    }
+
+    if (table.style.backgroundColor.length === 0) {
+      const tableBg = table.getAttribute("bgcolor")?.trim() ?? "";
+      if (tableBg.length > 0) {
+        table.style.backgroundColor = tableBg;
+      }
+    }
+
+    applySizeIfMissing(table.style, "width", table.getAttribute("width"), { allowPercent: true });
+    applySizeIfMissing(table.style, "borderSpacing", table.getAttribute("cellspacing"));
+    applySizeIfMissing(table.style, "borderWidth", table.getAttribute("border"));
+    if (table.style.borderWidth.length > 0 && table.style.borderStyle.length === 0) {
+      table.style.borderStyle = "solid";
+    }
+    if (table.style.borderColor.length === 0) {
+      const borderColor = table.getAttribute("bordercolor")?.trim() ?? "";
+      if (borderColor.length > 0) {
+        table.style.borderColor = borderColor;
+      }
+    }
+
+    const tableCellPadding = table.getAttribute("cellpadding");
+    for (const cell of Array.from(table.querySelectorAll("td,th"))) {
+      const tableCell = cell as HTMLTableCellElement;
+      if (tableCell.getAttribute("contenteditable") !== "false") {
+        tableCell.setAttribute("contenteditable", "true");
+      }
+
+      if (tableCell.style.textAlign.length === 0) {
+        const align = tableCell.getAttribute("align")?.trim() ?? "";
+        if (align.length > 0) {
+          tableCell.style.textAlign = this.normalizeHorizontalAlign(align);
+        }
+      }
+
+      if (tableCell.style.verticalAlign.length === 0) {
+        const valign = tableCell.getAttribute("valign")?.trim() ?? "";
+        if (valign.length > 0) {
+          tableCell.style.verticalAlign = this.normalizeVerticalAlign(valign);
+        }
+      }
+
+      if (tableCell.style.backgroundColor.length === 0) {
+        const cellBg = tableCell.getAttribute("bgcolor")?.trim() ?? "";
+        if (cellBg.length > 0) {
+          tableCell.style.backgroundColor = cellBg;
+        }
+      }
+
+      applySizeIfMissing(tableCell.style, "width", tableCell.getAttribute("width"), { allowPercent: true });
+      applySizeIfMissing(tableCell.style, "height", tableCell.getAttribute("height"));
+      applySizeIfMissing(tableCell.style, "padding", tableCell.getAttribute("cellpadding") ?? tableCellPadding);
+      applySizeIfMissing(tableCell.style, "borderWidth", tableCell.getAttribute("border") ?? table.getAttribute("border"));
+
+      if (tableCell.style.borderWidth.length > 0 && tableCell.style.borderStyle.length === 0) {
+        tableCell.style.borderStyle = "solid";
+      }
+
+      if (tableCell.style.borderColor.length === 0) {
+        const cellBorderColor = tableCell.getAttribute("bordercolor")?.trim() ?? "";
+        const tableBorderColor = table.getAttribute("bordercolor")?.trim() ?? "";
+        const borderColor = cellBorderColor || tableBorderColor;
+        if (borderColor.length > 0) {
+          tableCell.style.borderColor = borderColor;
+        }
+      }
+
+      if (tableCell.style.whiteSpace.length === 0 && tableCell.hasAttribute("nowrap")) {
+        tableCell.style.whiteSpace = "nowrap";
+        if (tableCell.style.overflowWrap.length === 0) {
+          tableCell.style.overflowWrap = "normal";
+        }
+      }
     }
   }
 
@@ -5037,6 +7185,146 @@ export class RichEditor {
     }
 
     this.handleModifierShortcuts(event);
+  }
+
+  private handlePostFormControlExitEnterKeydown(event: KeyboardEvent): boolean {
+    if (!this.pendingEnterAfterFormControlExit) {
+      return false;
+    }
+
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+      this.pendingEnterAfterFormControlExit = false;
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      this.pendingEnterAfterFormControlExit = false;
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      this.pendingEnterAfterFormControlExit = false;
+      return false;
+    }
+
+    const startEl = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+    if (startEl?.closest(".re-form-control-label")) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.pendingEnterAfterFormControlExit = false;
+    this.exec("insertParagraph");
+    return true;
+  }
+
+  private handleEditorBeforeInput(event: InputEvent): boolean {
+    const inputType = event.inputType;
+    if (inputType !== "insertParagraph" && inputType !== "insertLineBreak") {
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return false;
+    }
+
+    const startEl = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+    const label = startEl?.closest(".re-form-control-label") as HTMLElement | null;
+    if (label) {
+      const wrapper = label.closest(".re-form-control-wrap") as HTMLElement | null;
+      if (!wrapper) {
+        return false;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      this.moveCaretAfterFormControlWrapper(wrapper);
+      this.debouncedSave();
+      return true;
+    }
+
+    if (this.pendingEnterAfterFormControlExit) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.pendingEnterAfterFormControlExit = false;
+      this.exec("insertParagraph");
+      return true;
+    }
+
+    return false;
+  }
+
+  private handleFormControlLabelEnterKeydown(event: KeyboardEvent): boolean {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const target = event.target as HTMLElement | null;
+    const selectionStart = selection.getRangeAt(0).startContainer;
+    const selectionElement = selectionStart instanceof HTMLElement ? selectionStart : selectionStart.parentElement;
+    const labelFromTarget = target?.closest(".re-form-control-label") as HTMLElement | null;
+    const labelFromSelection = selectionElement?.closest(".re-form-control-label") as HTMLElement | null;
+    const label = labelFromTarget ?? labelFromSelection;
+    if (!label || !this.editor.contains(label)) {
+      return false;
+    }
+
+    const wrapper = label.closest(".re-form-control-wrap") as HTMLElement | null;
+    if (!wrapper) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.moveCaretAfterFormControlWrapper(wrapper);
+
+    this.captureSelection();
+    this.updateToolbarState();
+    this.debouncedSave();
+    return true;
+  }
+
+  private moveCaretAfterFormControlWrapper(wrapper: HTMLElement): void {
+    const parent = wrapper.parentNode;
+    if (!parent) {
+      return;
+    }
+
+    wrapper.blur?.();
+
+    let next = wrapper.nextSibling;
+    if (!(next instanceof Text)) {
+      next = document.createTextNode(" ");
+      parent.insertBefore(next, wrapper.nextSibling);
+    }
+
+    const textNode = next as Text;
+    const offset = textNode.data.length;
+    const selection = window.getSelection();
+    if (!selection) {
+      return;
+    }
+
+    const range = document.createRange();
+    range.setStart(textNode, offset);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    this.pendingEnterAfterFormControlExit = true;
+    this.focusEditor();
   }
 
   private handleInterTableGapDeleteKeydown(event: KeyboardEvent): boolean {
@@ -5482,6 +7770,90 @@ export class RichEditor {
   private syncActiveImageWithCaret(): void {
     const near = this.getImageWrapperNearCollapsedCaret();
     this.setActiveImageWrapper(near);
+    const nearFormControl = this.getFormControlWrapperNearCollapsedCaret();
+    this.setActiveFormControlWrapper(nearFormControl);
+  }
+
+  private getFormControlWrapperNearCollapsedCaret(): HTMLElement | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return null;
+    }
+
+    const resolveControl = (node: Node | null): HTMLElement | null => {
+      if (!node) {
+        return null;
+      }
+      const element = node instanceof HTMLElement ? node : node.parentElement;
+      const wrapper = element?.closest(".re-form-control-wrap") as HTMLElement | null;
+      return wrapper && this.editor.contains(wrapper) ? wrapper : null;
+    };
+
+    const direct = resolveControl(range.startContainer);
+    if (direct) {
+      return direct;
+    }
+
+    if (range.startContainer instanceof Text) {
+      const text = range.startContainer;
+      if (range.startOffset <= 0) {
+        const prev = resolveControl(text.previousSibling) ?? resolveControl(text.parentElement?.previousSibling ?? null);
+        if (prev) {
+          return prev;
+        }
+      }
+      if (range.startOffset >= text.length) {
+        const next = resolveControl(text.nextSibling) ?? resolveControl(text.parentElement?.nextSibling ?? null);
+        if (next) {
+          return next;
+        }
+      }
+    } else if (range.startContainer instanceof HTMLElement) {
+      const container = range.startContainer;
+      const idx = range.startOffset;
+      const nearRight = idx >= 0 && idx < container.childNodes.length ? container.childNodes[idx] : null;
+      const nearLeft = idx - 1 >= 0 && idx - 1 < container.childNodes.length ? container.childNodes[idx - 1] : null;
+      const right = resolveControl(nearRight);
+      if (right) {
+        return right;
+      }
+      const left = resolveControl(nearLeft);
+      if (left) {
+        return left;
+      }
+    }
+
+    const rangeElement = range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    if (!rangeElement) {
+      return null;
+    }
+
+    const top = this.getTopLevelEditorChild(rangeElement);
+    if (!top) {
+      return null;
+    }
+
+    if (this.isRangeAtElementBoundary(range, top, "start")) {
+      const prevTop = resolveControl(top.previousSibling);
+      if (prevTop) {
+        return prevTop;
+      }
+    }
+    if (this.isRangeAtElementBoundary(range, top, "end")) {
+      const nextTop = resolveControl(top.nextSibling);
+      if (nextTop) {
+        return nextTop;
+      }
+    }
+
+    return null;
   }
 
   private getBoundaryImageForArrowShortcut(key: "ArrowLeft" | "ArrowRight"): HTMLElement | null {
@@ -5696,7 +8068,7 @@ export class RichEditor {
     };
 
     const unwrapTablesFromParagraph = (p: HTMLParagraphElement): boolean => {
-      if (!p.querySelector("table")) {
+      if (!p.querySelector("table") && !p.querySelector(".re-table-wrap")) {
         return false;
       }
 
@@ -5734,7 +8106,7 @@ export class RichEditor {
       };
 
       for (const child of Array.from(p.childNodes)) {
-        if (child instanceof HTMLTableElement) {
+        if (child instanceof HTMLTableElement || (child instanceof HTMLDivElement && child.classList.contains("re-table-wrap"))) {
           flushSegment();
           parent.insertBefore(child, p);
           changedLocal = true;
@@ -6375,6 +8747,18 @@ export class RichEditor {
     }
   }
 
+  private setActiveFormControlWrapper(next: HTMLElement | null): void {
+    if (this.activeFormControlWrapper && this.activeFormControlWrapper !== next) {
+      this.activeFormControlWrapper.classList.remove("re-active");
+    }
+
+    this.activeFormControlWrapper = next && next.isConnected ? next : null;
+
+    if (this.activeFormControlWrapper) {
+      this.activeFormControlWrapper.classList.add("re-active");
+    }
+  }
+
   private setActiveTableElement(next: HTMLTableElement | null): void {
     if (this.activeTableElement && this.activeTableElement !== next) {
       this.activeTableElement.classList.remove("re-active");
@@ -6424,6 +8808,7 @@ export class RichEditor {
   }
 
   private deleteSpecificTable(table: HTMLTableElement, source: "inside-cell" | "outside-table-boundary"): void {
+    const beforeHtml = this.editor.innerHTML;
     const removeTarget = this.getTableDeleteHost(table);
     const placeholder = document.createElement("p");
     placeholder.innerHTML = "<br>";
@@ -6449,6 +8834,7 @@ export class RichEditor {
     this.updateToolbarState();
     this.debugLog(`table deleted source=${source}`);
     this.showSaveStatus(DELETE_UI_TEXT.tableDeleted);
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
   }
 
@@ -6883,51 +9269,9 @@ export class RichEditor {
         }
       }
 
-      const lineHeightSelect = this.toolbar.querySelector('[data-role="lineHeight"]') as HTMLSelectElement | null;
-      if (lineHeightSelect) {
-        const normalized = this.normalizeLineHeightOption(style, selectedElement ?? this.editor);
-        const option = Array.from(lineHeightSelect.options).find((item) => item.value === normalized);
-        if (option) {
-          lineHeightSelect.value = option.value;
-        }
-      }
-
       this.updateColorTriggerChips(style.color, style.backgroundColor);
       this.updateColorPaletteSelection(style.color, style.backgroundColor);
     }
-  }
-
-  private normalizeLineHeightOption(style: CSSStyleDeclaration, baseElement: HTMLElement): LineHeightOption {
-    const value = style.lineHeight;
-    if (value === "normal" || !value) {
-      return "1.4";
-    }
-
-    const numeric = Number.parseFloat(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-      return "1.4";
-    }
-
-    // px 단위는 폰트 크기로 나눠 ratio로 환산한 뒤 가장 가까운 프리셋을 선택한다.
-    let ratio = numeric;
-    if (value.endsWith("px")) {
-      const fontSize = Number.parseFloat(window.getComputedStyle(baseElement).fontSize);
-      if (Number.isFinite(fontSize) && fontSize > 0) {
-        ratio = numeric / fontSize;
-      }
-    }
-
-    const options: LineHeightOption[] = ["1.2", "1.4", "1.6", "1.8"];
-    let closest: LineHeightOption = "1.4";
-    let minDiff = Number.POSITIVE_INFINITY;
-    for (const option of options) {
-      const diff = Math.abs(Number.parseFloat(option) - ratio);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = option;
-      }
-    }
-    return closest;
   }
 
   private applyToolbarDefaults(): void {
@@ -6941,14 +9285,6 @@ export class RichEditor {
       const option = Array.from(fontSizeSelect.options).find((item) => item.value === "12px");
       if (option) {
         fontSizeSelect.value = option.value;
-      }
-    }
-
-    const lineHeightSelect = this.toolbar.querySelector('[data-role="lineHeight"]') as HTMLSelectElement | null;
-    if (lineHeightSelect) {
-      const option = Array.from(lineHeightSelect.options).find((item) => item.value === "1.4");
-      if (option) {
-        lineHeightSelect.value = option.value;
       }
     }
 
@@ -6973,10 +9309,13 @@ export class RichEditor {
     const normalizedText = this.normalizeColorToHex(textColor);
     const normalizedBg = this.normalizeColorToHex(backgroundColor);
     const isTransparentBg = !normalizedBg || backgroundColor === "transparent" || backgroundColor.includes("0)");
+    const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
 
-    for (const node of Array.from(this.colorPalette.querySelectorAll("button[data-color-role]"))) {
+    this.refreshRecentColorSwatches();
+
+    for (const node of Array.from(this.colorPalette.querySelectorAll("button[data-color-value]"))) {
       const button = node as HTMLButtonElement;
-      const role = button.dataset.colorRole as FormattingRole | undefined;
+      const role = (button.dataset.colorRole as FormattingRole | undefined) ?? mode;
       const value = button.dataset.colorValue?.toLowerCase() ?? "";
       let selected = false;
 
@@ -7289,10 +9628,22 @@ export class RichEditor {
       return color;
     }
 
+    if (color.trim().toLowerCase() === "transparent") {
+      return null;
+    }
+
     // rgb/rgba 포맷만 파싱해 6자리 hex로 정규화한다(alpha는 무시).
-    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d*\.?\d+))?\)/i);
     if (!match) {
       return null;
+    }
+
+    const alphaText = match[4];
+    if (typeof alphaText === "string") {
+      const alpha = Number.parseFloat(alphaText);
+      if (Number.isFinite(alpha) && alpha <= 0) {
+        return null;
+      }
     }
 
     const [r, g, b] = match.slice(1, 4).map((value) => Number.parseInt(value, 10));
@@ -7321,9 +9672,18 @@ export class RichEditor {
   }
 
   private showSaveStatus(text: string): void {
-    this.saveStatus.textContent = text;
+    const statusText = this.saveStatus.querySelector('[data-role="saveStatusText"]') as HTMLSpanElement | null;
+    if (statusText) {
+      statusText.textContent = text;
+    } else {
+      this.saveStatus.textContent = text;
+    }
     window.setTimeout(() => {
-      this.saveStatus.textContent = "Idle";
+      if (statusText) {
+        statusText.textContent = "Idle";
+      } else {
+        this.saveStatus.textContent = "Idle";
+      }
     }, 1200);
   }
 

@@ -1,4 +1,4 @@
-import type { FormattingRole, LineHeightOption, TableAction } from "../types";
+import type { FormattingRole, TableAction } from "../types";
 
 // 에디터 UI 이벤트를 한곳에서 묶어 바인딩한다.
 // ctx는 RichEditor 인스턴스의 메서드/상태를 위임받아 사용한다.
@@ -141,13 +141,36 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
-    if (action === "colorPalette") {
+    if (action === "textColorPalette") {
       event.stopPropagation();
       ctx.captureSelection();
       const activeRange = ctx.getActiveEditorRange();
       ctx.toolbarInteractionRange = activeRange ? activeRange.cloneRange() : ctx.lastExpandedRange?.cloneRange() ?? null;
       ctx.isToolbarInteracting = true;
-      ctx.toggleColorPalette();
+      ctx.toggleColorPalette("foreColor");
+      return;
+    }
+
+    if (action === "bgColorPalette") {
+      event.stopPropagation();
+      ctx.captureSelection();
+      const activeRange = ctx.getActiveEditorRange();
+      ctx.toolbarInteractionRange = activeRange ? activeRange.cloneRange() : ctx.lastExpandedRange?.cloneRange() ?? null;
+      ctx.isToolbarInteracting = true;
+      ctx.toggleColorPalette("hiliteColor");
+      return;
+    }
+
+    if (action === "fontSizeDecrease") {
+      ctx.restoreSelection();
+      ctx.adjustFontSizeByStep?.(-1);
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "fontSizeIncrease") {
+      ctx.restoreSelection();
+      ctx.adjustFontSizeByStep?.(1);
       return;
     }
 
@@ -156,9 +179,62 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
+    if (action === "insertCheckbox") {
+      event.stopPropagation();
+      ctx.restoreSelection();
+      ctx.insertCheckboxControl?.();
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "insertRadio") {
+      event.stopPropagation();
+      ctx.restoreSelection();
+      ctx.insertRadioControl?.();
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "insertInput") {
+      event.stopPropagation();
+      ctx.restoreSelection();
+      ctx.insertInputControl?.();
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "insertMemo") {
+      event.stopPropagation();
+      ctx.restoreSelection();
+      ctx.insertMemoControl?.();
+      ctx.updateToolbarState();
+      return;
+    }
+
     if (action === "insertWeeklyReportTemplate") {
       ctx.restoreSelection(false);
       ctx.insertWeeklyReportTemplate?.();
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "tableAlignLeft") {
+      ctx.restoreSelection(false);
+      ctx.alignCurrentTable?.("left");
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "tableAlignCenter") {
+      ctx.restoreSelection(false);
+      ctx.alignCurrentTable?.("center");
+      ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "tableAlignRight") {
+      ctx.restoreSelection(false);
+      ctx.alignCurrentTable?.("right");
       ctx.updateToolbarState();
       return;
     }
@@ -248,11 +324,17 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
-    if (role === "lineHeight") {
-      ctx.restoreSelection();
-      ctx.applyLineHeightToSelection(selectedValue as LineHeightOption);
+    if (role === "templatePreset") {
+      if (!selectedValue) {
+        return;
+      }
+      ctx.restoreSelection(false);
+      ctx.insertTemplateByType?.(selectedValue);
+      target.value = "";
       ctx.updateToolbarState();
+      return;
     }
+
   });
 
   ctx.toolbar.addEventListener("input", (event: Event) => {
@@ -281,26 +363,95 @@ export function bindRichEditorEvents(ctx: any): void {
 
   ctx.colorPalette.addEventListener("click", (event: Event) => {
     const target = event.target as HTMLElement;
-    const swatch = target.closest("button[data-color-role]") as HTMLButtonElement | null;
+    const paletteOwner = ctx.colorPaletteOwner;
+    const isFormControlLabelBgOwner = paletteOwner === "formControlLabelBg";
+    const isFormControlValueColorOwner = paletteOwner === "formControlValueColor";
+    const swatch = target.closest("button[data-color-value]") as HTMLButtonElement | null;
     if (swatch) {
-      const role = swatch.dataset.colorRole as FormattingRole | undefined;
       const value = swatch.dataset.colorValue;
-      if ((role === "foreColor" || role === "hiliteColor") && value) {
-        ctx.applyFormattingRoleChange(role, value, "palette");
-        ctx.updateToolbarState();
+      if (value) {
+        if (isFormControlLabelBgOwner) {
+          ctx.applyFormControlLabelBgColorFromToolbarPalette?.(value);
+        } else if (isFormControlValueColorOwner) {
+          ctx.applyFormControlValueColorFromToolbarPalette?.(value);
+        } else {
+          const paletteMode = ctx.colorPalette.dataset.mode;
+          const role = (swatch.dataset.colorRole as FormattingRole | undefined)
+            ?? (paletteMode === "hiliteColor" ? "hiliteColor" : "foreColor");
+          if (role === "foreColor" || role === "hiliteColor") {
+            ctx.applyFormattingRoleChange(role, value, "palette");
+            ctx.pushRecentPaletteColor?.(role, value);
+            ctx.updateToolbarState();
+          }
+        }
       }
       return;
     }
 
     const actionButton = target.closest("button[data-action]") as HTMLButtonElement | null;
-    if (actionButton?.dataset.action === "resetColors") {
-      ctx.applyFormattingRoleChange("foreColor", "#0f172a", "palette");
-      ctx.applyFormattingRoleChange("hiliteColor", "transparent", "palette");
+    const action = actionButton?.dataset.action;
+    if (!action) {
+      return;
+    }
+
+    if (action === "applyAutomaticColor") {
+      if (isFormControlLabelBgOwner) {
+        ctx.applyFormControlLabelBgAutomaticFromToolbarPalette?.();
+        return;
+      }
+      if (isFormControlValueColorOwner) {
+        ctx.applyFormControlValueColorAutomaticFromToolbarPalette?.();
+        return;
+      }
+      const paletteMode = ctx.colorPalette.dataset.mode;
+      const role = paletteMode === "hiliteColor" ? "hiliteColor" : "foreColor";
+      const value = role === "hiliteColor" ? "transparent" : "#0f172a";
+      ctx.applyFormattingRoleChange(role, value, "palette");
       ctx.updateToolbarState();
+      return;
+    }
+
+    if (action === "eyedropperColor") {
+      if (isFormControlLabelBgOwner) {
+        void ctx.pickFormControlLabelBgFromEyedropper?.();
+        return;
+      }
+      if (isFormControlValueColorOwner) {
+        void ctx.pickFormControlValueColorFromEyedropper?.();
+        return;
+      }
+      void ctx.pickColorFromEyedropper?.();
+      return;
+    }
+
+    if (action === "moreColors") {
+      const input = ctx.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+      input?.click();
     }
   });
 
-  ctx.mergePreviewBadge.addEventListener("click", () => {
+  const moreColorInput = ctx.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+  moreColorInput?.addEventListener("change", () => {
+    const value = moreColorInput.value;
+    if (!value) {
+      return;
+    }
+    if (ctx.colorPaletteOwner === "formControlLabelBg") {
+      ctx.applyFormControlLabelBgColorFromToolbarPalette?.(value);
+      return;
+    }
+    if (ctx.colorPaletteOwner === "formControlValueColor") {
+      ctx.applyFormControlValueColorFromToolbarPalette?.(value);
+      return;
+    }
+    const paletteMode = ctx.colorPalette.dataset.mode;
+    const role = paletteMode === "hiliteColor" ? "hiliteColor" : "foreColor";
+    ctx.applyFormattingRoleChange(role, value, "palette");
+    ctx.pushRecentPaletteColor?.(role, value);
+    ctx.updateToolbarState();
+  });
+
+  ctx.mergePreviewBadge?.addEventListener("click", () => {
     if (!ctx.pendingExpandedMerge) {
       return;
     }
@@ -308,7 +459,7 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.showSaveStatus("Merge preview canceled");
   });
 
-  ctx.mergeRangeBadge.addEventListener("click", () => {
+  ctx.mergeRangeBadge?.addEventListener("click", () => {
     if (!ctx.pendingExpandedMerge) {
       return;
     }
@@ -609,6 +760,7 @@ export function bindRichEditorEvents(ctx: any): void {
     const imageWrap = target.closest(".re-image-wrap") as HTMLElement | null;
     if (imageWrap) {
       ctx.setActiveImageWrapper(imageWrap);
+      ctx.setActiveFormControlWrapper?.(null);
       ctx.setActiveTableElement(null);
       ctx.clearSelectedCells();
       ctx.keyboardAnchorCell = null;
@@ -618,8 +770,28 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
+    const formControlWrap = target.closest(".re-form-control-wrap") as HTMLElement | null;
+    if (formControlWrap) {
+      ctx.setActiveFormControlWrapper?.(formControlWrap);
+      ctx.setActiveImageWrapper(null);
+      ctx.setActiveTableElement(null);
+      ctx.clearSelectedCells();
+      ctx.keyboardAnchorCell = null;
+      ctx.keyboardFocusCell = null;
+      ctx.lastTableAnchorCell = null;
+      if (!ctx.formControlPropsDialog?.hidden && ctx.formControlPropsTarget !== formControlWrap) {
+        ctx.showFormControlPropsDialog?.(formControlWrap);
+      }
+      ctx.debugLog("form control click active wrapper selected");
+      return;
+    }
+
     if (ctx.activeImageWrapper) {
       ctx.setActiveImageWrapper(null);
+    }
+
+    if (ctx.activeFormControlWrapper) {
+      ctx.setActiveFormControlWrapper?.(null);
     }
 
     if (ctx.didDragSelectCells) {
@@ -675,6 +847,19 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.setActiveTableElement((cell as HTMLTableCellElement).closest("table") as HTMLTableElement | null);
 
     ctx.updateMergePreview();
+  });
+
+  ctx.editor.addEventListener("dblclick", (event: Event) => {
+    const target = event.target as HTMLElement;
+    const formControlWrap = target.closest(".re-form-control-wrap") as HTMLElement | null;
+    if (!formControlWrap) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    ctx.setActiveFormControlWrapper?.(formControlWrap);
+    ctx.showFormControlPropsDialog?.(formControlWrap);
   });
 
   ctx.editor.addEventListener("contextmenu", (event: Event) => {
@@ -802,6 +987,92 @@ export function bindRichEditorEvents(ctx: any): void {
   ctx.editor.addEventListener("copy", (event: ClipboardEvent) => ctx.handleCopy(event));
   ctx.editor.addEventListener("cut", (event: ClipboardEvent) => ctx.handleCut(event));
 
+  ctx.formControlPropsDialog?.addEventListener("click", (event: Event) => {
+    const target = event.target as HTMLElement;
+    const actionButton = target.closest('button[data-action]') as HTMLButtonElement | null;
+    if (!actionButton) {
+      return;
+    }
+
+    const action = actionButton.dataset.action;
+    if (action === "toggleFormControlColorPalette") {
+      event.preventDefault();
+      event.stopPropagation();
+      const rawTarget = actionButton.dataset.target;
+      const targetKey = rawTarget === "value" ? "value" : rawTarget === "labelBg" ? "labelBg" : "label";
+      ctx.toggleFormControlColorPalette?.(targetKey);
+      return;
+    }
+
+    if (action === "applyFormControlColor") {
+      event.preventDefault();
+      event.stopPropagation();
+      const color = actionButton.dataset.colorValue;
+      if (color) {
+        ctx.applyFormControlColor?.(color);
+      }
+      return;
+    }
+
+    if (action === "applyFormControlColorAutomatic") {
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.applyFormControlColorAutomatic?.();
+      return;
+    }
+
+    if (action === "moreFormControlColors") {
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.openFormControlMoreColors?.();
+      return;
+    }
+
+    if (action === "setFormControlLabelAlign") {
+      event.preventDefault();
+      event.stopPropagation();
+      const align = actionButton.dataset.align;
+      if (align === "left" || align === "center" || align === "right") {
+        ctx.setFormControlLabelAlign?.(align);
+      }
+      return;
+    }
+
+    if (action === "setFormControlLabelPosition") {
+      event.preventDefault();
+      event.stopPropagation();
+      const position = actionButton.dataset.position;
+      if (position === "left" || position === "right" || position === "top" || position === "bottom") {
+        ctx.setFormControlLabelPosition?.(position);
+      }
+      return;
+    }
+
+    if (action === "setFormControlBorderScope") {
+      event.preventDefault();
+      event.stopPropagation();
+      const borderScope = actionButton.dataset.borderScope;
+      if (borderScope === "input" || borderScope === "all") {
+        ctx.setFormControlBorderScope?.(borderScope);
+      }
+      return;
+    }
+
+    if (action === "applyFormControlProps") {
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.applyFormControlProps?.();
+      return;
+    }
+
+    if (action === "cancelFormControlProps") {
+      event.preventDefault();
+      event.stopPropagation();
+      ctx.hideFormControlPropsDialog?.();
+      ctx.hideFormControlColorPalette?.();
+    }
+  });
+
   // 드래그 선택 직후 포커스가 editor 엘리먼트가 아닐 때도
   // 선택 셀 기반 copy/cut/paste 처리가 누락되지 않도록 전역 폴백을 둔다.
   document.addEventListener("copy", (event: ClipboardEvent) => {
@@ -853,6 +1124,13 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key === "Escape" && !ctx.formControlPropsDialog?.hidden) {
+      event.preventDefault();
+      ctx.hideFormControlPropsDialog?.();
+      ctx.hideFormControlColorPalette?.();
+      return;
+    }
+
     if (event.key === "Escape" && !ctx.tablePropsDialog.hidden) {
       event.preventDefault();
       ctx.cancelTablePropsDialog?.();
@@ -926,7 +1204,8 @@ export function bindRichEditorEvents(ctx: any): void {
       ctx.emojiPicker.hidden = true;
     }
 
-    if (!ctx.colorPalette.hidden && !ctx.colorPalette.contains(target) && !ctx.colorPaletteButton.contains(target)) {
+    const isColorButtonClick = ctx.textColorButton.contains(target) || ctx.bgColorButton.contains(target);
+    if (!ctx.colorPalette.hidden && !ctx.colorPalette.contains(target) && !isColorButtonClick) {
       ctx.colorPalette.hidden = true;
       ctx.endToolbarInteraction();
     }
@@ -941,6 +1220,15 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (!ctx.mentionPopup.hidden && !ctx.mentionPopup.contains(target)) {
       ctx.hideMentionPopup?.();
+    }
+
+    const isFormControlDialogClick = Boolean(
+      ctx.formControlPropsDialog?.contains(target)
+      || (target instanceof HTMLElement && target.closest(".re-form-control-wrap")),
+    );
+    if (!ctx.formControlPropsDialog?.hidden && !isFormControlDialogClick) {
+      ctx.hideFormControlPropsDialog?.();
+      ctx.hideFormControlColorPalette?.();
     }
 
     if (!ctx.tablePropsDialog.hidden && !ctx.tablePropsDialog.contains(target) && !ctx.tableContextMenu.contains(target)) {

@@ -1,4 +1,4 @@
-import { BG_COLOR_SWATCHES, TEXT_COLOR_SWATCHES } from "../constants";
+import { STANDARD_COLOR_SWATCHES, THEME_COLOR_SWATCHES } from "../constants";
 
 type AnchorPositionOptions = {
   centerAnchor?: boolean;
@@ -30,40 +30,41 @@ export function renderEmojiButtons(
 
 // 텍스트/배경 색상 스와치를 동적으로 생성한다.
 export function renderColorSwatches(root: HTMLElement): void {
-  const textGrid = root.querySelector('[data-role="textColorGrid"]') as HTMLDivElement;
-  const bgGrid = root.querySelector('[data-role="bgColorGrid"]') as HTMLDivElement;
-  textGrid.innerHTML = "";
-  bgGrid.innerHTML = "";
+  const themeGrid = root.querySelector('[data-role="themeColorGrid"]') as HTMLDivElement;
+  const standardGrid = root.querySelector('[data-role="standardColorGrid"]') as HTMLDivElement;
+  const recentGrid = root.querySelector('[data-role="recentColorGrid"]') as HTMLDivElement;
 
-  for (const color of TEXT_COLOR_SWATCHES) {
+  themeGrid.innerHTML = "";
+  standardGrid.innerHTML = "";
+  recentGrid.innerHTML = "";
+
+  for (const color of THEME_COLOR_SWATCHES) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "re-color-swatch";
-    button.dataset.colorRole = "foreColor";
-    button.dataset.colorValue = color;
-    button.title = color;
-    button.innerHTML = `<span class="re-swatch-label" style="color:${color}">A</span>`;
-    textGrid.appendChild(button);
-  }
-
-  const none = document.createElement("button");
-  none.type = "button";
-  none.className = "re-color-swatch re-color-swatch-none";
-  none.dataset.colorRole = "hiliteColor";
-  none.dataset.colorValue = "transparent";
-  none.title = "배경 없음";
-  none.innerHTML = "<span class=\"re-swatch-none-line\"></span>";
-  bgGrid.appendChild(none);
-
-  for (const color of BG_COLOR_SWATCHES) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "re-color-swatch";
-    button.dataset.colorRole = "hiliteColor";
     button.dataset.colorValue = color;
     button.title = color;
     button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
-    bgGrid.appendChild(button);
+    themeGrid.appendChild(button);
+  }
+
+  for (const color of STANDARD_COLOR_SWATCHES) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "re-color-swatch re-color-swatch-standard";
+    button.dataset.colorValue = color;
+    button.title = color;
+    button.innerHTML = `<span class="re-swatch-preview" style="background:${color}"></span>`;
+    standardGrid.appendChild(button);
+  }
+
+  for (let index = 0; index < 10; index += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "re-color-swatch re-color-swatch-empty";
+    button.disabled = true;
+    button.title = "최근 색상 없음";
+    recentGrid.appendChild(button);
   }
 }
 

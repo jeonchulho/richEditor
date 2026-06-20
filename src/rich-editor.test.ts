@@ -305,6 +305,90 @@ describe("RichEditor table insertion trailing paragraph", () => {
     expect(topLevelParagraphs.length).toBe(0);
   });
 
+  it("inserts weekly report tables wrapped with div.re-table-wrap", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertWeeklyReportTemplate: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    editorInstance.insertWeeklyReportTemplate();
+
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    const topLevelTables = editor.querySelectorAll(":scope > table.re-table");
+    expect(wrappers.length).toBeGreaterThanOrEqual(2);
+    expect(topLevelTables.length).toBe(0);
+    expect(wrappers[0]?.querySelector(":scope > table.re-report-sign-table")).not.toBeNull();
+    expect(wrappers[1]?.querySelector(":scope > table.re-report-main-table")).not.toBeNull();
+  });
+
+  it("inserts weekly report blocks outside a top-level paragraph", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertWeeklyReportTemplate: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p>안녕하세요</p>";
+
+    const paragraphText = editor.querySelector("p")?.firstChild;
+    if (!(paragraphText instanceof Text)) {
+      throw new Error("paragraph text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(paragraphText, paragraphText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertWeeklyReportTemplate();
+
+    const hostParagraph = editor.querySelector(":scope > p") as HTMLParagraphElement | null;
+    expect(hostParagraph).not.toBeNull();
+    expect(hostParagraph?.querySelector("h2, table, .re-table-wrap")).toBeNull();
+
+    const reportTitle = editor.querySelector(":scope > h2.re-report-title") as HTMLHeadingElement | null;
+    const wrappers = editor.querySelectorAll(":scope > div.re-table-wrap");
+    expect(reportTitle).not.toBeNull();
+    expect(wrappers.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps table resize handles visible after inserting weekly report", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertWeeklyReportTemplate: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    editorInstance.insertWeeklyReportTemplate();
+
+    const reportTables = editor.querySelectorAll("table.re-table");
+    expect(reportTables.length).toBeGreaterThanOrEqual(2);
+
+    const firstTable = reportTables[0] as HTMLTableElement;
+    const secondTable = reportTables[1] as HTMLTableElement;
+    expect(firstTable.querySelectorAll(".re-col-handle").length).toBeGreaterThan(0);
+    expect(secondTable.querySelectorAll(".re-col-handle").length).toBeGreaterThan(0);
+    expect(firstTable.querySelectorAll(".re-table-corner-handle").length).toBe(4);
+    expect(secondTable.querySelectorAll(".re-table-corner-handle").length).toBe(4);
+  });
+
   it("inserts table outside paragraph when caret is inside a top-level paragraph", () => {
     const root = document.createElement("div");
     document.body.appendChild(root);
@@ -550,6 +634,173 @@ describe("RichEditor table structure normalization", () => {
 
     expect(wrapper).not.toBeNull();
     expect(wrappedTable).not.toBeNull();
+  });
+
+  it("wraps pasted top-level table and hydrates legacy attributes", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      decorateSpecialNodes: () => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<table width="80%" border="1" cellpadding="6" cellspacing="2" align="center"><tr><td align="right" valign="middle" nowrap>A</td></tr></table>';
+
+    editorInstance.decorateSpecialNodes();
+
+    const wrapper = editor.querySelector(":scope > div.re-table-wrap") as HTMLDivElement | null;
+    const table = wrapper?.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+    const cell = table?.querySelector("td") as HTMLTableCellElement | null;
+
+    expect(wrapper).not.toBeNull();
+    expect(table).not.toBeNull();
+    expect(cell).not.toBeNull();
+    expect(table?.style.width).toBe("80%");
+    expect(table?.style.borderWidth).toBe("1px");
+    expect(table?.style.marginLeft).toBe("auto");
+    expect(table?.style.marginRight).toBe("auto");
+    expect(cell?.style.textAlign).toBe("right");
+    expect(cell?.style.verticalAlign).toBe("middle");
+    expect(cell?.style.padding).toBe("6px");
+    expect(cell?.style.whiteSpace).toBe("nowrap");
+  });
+
+  it("initializes table and cell property dialog inputs from legacy attributes", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyTableProperties: () => void;
+      applyRowProperties: () => void;
+      applyCellProperties: () => void;
+      applyColumnProperties: () => void;
+      tablePropsWidthInput: HTMLInputElement;
+      tablePropsBorderWidthInput: HTMLInputElement;
+      tablePropsMarginInput: HTMLInputElement;
+      tablePropsPaddingInput: HTMLInputElement;
+      tablePropsAlignSelect: HTMLSelectElement;
+      tablePropsRowPaddingInput: HTMLInputElement;
+      tablePropsRowMarginInput: HTMLInputElement;
+      tablePropsCellAlignSelect: HTMLSelectElement;
+      tablePropsCellVAlignSelect: HTMLSelectElement;
+      tablePropsCellWrapSelect: HTMLSelectElement;
+      tablePropsCellPaddingInput: HTMLInputElement;
+      tablePropsCellMarginInput: HTMLInputElement;
+      tablePropsColPaddingInput: HTMLInputElement;
+      tablePropsColMarginInput: HTMLInputElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table" width="75%" border="2" align="right" cellpadding="8" style="margin: 4px auto 8px auto">',
+      '<tr><td align="center" valign="middle" nowrap style="padding: 9px; margin: 3px">A</td></tr>',
+      "</table></div>",
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.applyTableProperties();
+    expect(editorInstance.tablePropsWidthInput.value).toBe("75%");
+    expect(editorInstance.tablePropsBorderWidthInput.value).toBe("2");
+    expect(editorInstance.tablePropsMarginInput.value).toBe("4 auto 8");
+    expect(editorInstance.tablePropsPaddingInput.value).toBe("9");
+    expect(editorInstance.tablePropsAlignSelect.value).toBe("center");
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editorInstance.applyRowProperties();
+    expect(editorInstance.tablePropsRowPaddingInput.value).toBe("9");
+    expect(editorInstance.tablePropsRowMarginInput.value).toBe("3");
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.applyCellProperties();
+    expect(editorInstance.tablePropsCellAlignSelect.value).toBe("center");
+    expect(editorInstance.tablePropsCellVAlignSelect.value).toBe("middle");
+    expect(editorInstance.tablePropsCellWrapSelect.value).toBe("nowrap");
+    expect(editorInstance.tablePropsCellPaddingInput.value).toBe("9");
+    expect(editorInstance.tablePropsCellMarginInput.value).toBe("3");
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editorInstance.applyColumnProperties();
+    expect(editorInstance.tablePropsColPaddingInput.value).toBe("9");
+    expect(editorInstance.tablePropsColMarginInput.value).toBe("3");
+  });
+
+  it("applies only changed table property fields", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyTableProperties: () => void;
+      applyTablePropsDialog: () => void;
+      tablePropsWidthInput: HTMLInputElement;
+      tablePropsBorderColorInput: HTMLInputElement;
+      tablePropsBgColorInput: HTMLInputElement;
+      tablePropsPaddingInput: HTMLInputElement;
+      tablePropsMarginInput: HTMLInputElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table" style="width: 75%; border-color: rgb(255, 0, 0); margin: 4px auto;">',
+      '<tr><td style="padding: 9px; color: rgb(0, 0, 255);">A</td></tr>',
+      "</table></div>",
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.applyTableProperties();
+    editorInstance.tablePropsWidthInput.value = "60%";
+    editorInstance.applyTablePropsDialog();
+
+    const table = editor.querySelector("table") as HTMLTableElement | null;
+    const cell = editor.querySelector("td") as HTMLTableCellElement | null;
+
+    expect(table).not.toBeNull();
+    expect(cell).not.toBeNull();
+    expect(table?.style.width).toBe("60%");
+    expect(table?.style.borderColor).toBe("rgb(255, 0, 0)");
+    expect(table?.style.margin).toBe("4px auto");
+    expect(cell?.style.padding).toBe("9px");
+    expect(cell?.style.color).toBe("rgb(0, 0, 255)");
+    expect(editorInstance.tablePropsBorderColorInput.value.length).toBeGreaterThan(0);
+    expect(editorInstance.tablePropsBgColorInput.value).toBe("");
+    expect(editorInstance.tablePropsPaddingInput.value).toBe("9");
+    expect(editorInstance.tablePropsMarginInput.value).toBe("4 auto");
   });
 
   it("removes table wrapper when deleting a table", () => {
@@ -933,5 +1184,366 @@ describe("RichEditor table structure normalization", () => {
       ? afterRange.startContainer
       : afterRange?.startContainer.parentElement ?? null;
     expect(afterElement?.closest("table")).toBe(secondTable);
+  });
+
+  it("supports custom undo/redo snapshot after insertTable", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTable: (rows: number, cols: number) => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertTable(2, 2);
+    expect(editor.querySelectorAll("table.re-table").length).toBeGreaterThan(0);
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect(editor.querySelectorAll("table.re-table").length).toBe(0);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect(editor.querySelectorAll("table.re-table").length).toBeGreaterThan(0);
+  });
+
+  it("supports custom undo snapshot after deleteTable", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      deleteTable: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td></tr></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.deleteTable();
+    expect(editor.querySelectorAll("table.re-table").length).toBe(0);
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect(editor.querySelectorAll("table.re-table").length).toBeGreaterThan(0);
+  });
+
+  it("supports custom undo/redo snapshot after addRow", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      addRow: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap">',
+      '<table class="re-table"><tr><td contenteditable="true">A</td></tr></table>',
+      "</div>",
+      "<p><br></p>",
+    ].join("");
+
+    const table = editor.querySelector("table.re-table") as HTMLTableElement;
+    const beforeRows = table.rows.length;
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.addRow();
+    const afterAddRows = (editor.querySelector("table.re-table") as HTMLTableElement).rows.length;
+    expect(afterAddRows).toBeGreaterThan(beforeRows);
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect((editor.querySelector("table.re-table") as HTMLTableElement).rows.length).toBe(beforeRows);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect((editor.querySelector("table.re-table") as HTMLTableElement).rows.length).toBe(afterAddRows);
+  });
+
+  it("supports custom undo/redo snapshot after applying table properties", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyTableProperties: () => void;
+      applyTablePropsDialog: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+      tablePropsWidthInput: HTMLInputElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td></tr></table></div><p><br></p>';
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    const table = editor.querySelector("table.re-table") as HTMLTableElement;
+    const beforeWidth = table.style.width;
+
+    editorInstance.applyTableProperties();
+    editorInstance.tablePropsWidthInput.value = "640";
+    editorInstance.applyTablePropsDialog();
+
+    const afterApplyWidth = (editor.querySelector("table.re-table") as HTMLTableElement).style.width;
+    expect(afterApplyWidth).toBe("640px");
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect((editor.querySelector("table.re-table") as HTMLTableElement).style.width).toBe(beforeWidth);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect((editor.querySelector("table.re-table") as HTMLTableElement).style.width).toBe("640px");
+  });
+
+  it("supports custom undo/redo snapshot after applying row properties", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyRowProperties: () => void;
+      applyTablePropsDialog: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+      tablePropsRowHeightInput: HTMLInputElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td><td contenteditable="true">B</td></tr></table></div><p><br></p>';
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    const firstCell = editor.querySelector("td") as HTMLTableCellElement;
+    const beforeHeight = firstCell.style.height;
+
+    editorInstance.applyRowProperties();
+    editorInstance.tablePropsRowHeightInput.value = "72";
+    editorInstance.applyTablePropsDialog();
+
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.height).toBe("72px");
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.height).toBe(beforeHeight);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.height).toBe("72px");
+  });
+
+  it("supports custom undo/redo snapshot after applying column properties", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyColumnProperties: () => void;
+      applyTablePropsDialog: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+      tablePropsColWidthInput: HTMLInputElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td><td contenteditable="true">B</td></tr></table></div><p><br></p>';
+
+    const firstCellText = editor.querySelector("td")?.firstChild;
+    if (!(firstCellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(firstCellText, firstCellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    const beforeMinWidth = (editor.querySelector("td") as HTMLTableCellElement).style.minWidth;
+
+    editorInstance.applyColumnProperties();
+    editorInstance.tablePropsColWidthInput.value = "150";
+    editorInstance.applyTablePropsDialog();
+
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.minWidth).toBe("150px");
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.minWidth).toBe(beforeMinWidth);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.minWidth).toBe("150px");
+  });
+
+  it("supports custom undo/redo snapshot after applying cell properties", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      applyCellProperties: () => void;
+      applyTablePropsDialog: () => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+      tablePropsCellAlignSelect: HTMLSelectElement;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = '<div class="re-table-wrap"><table class="re-table"><tr><td contenteditable="true">A</td><td contenteditable="true">B</td></tr></table></div><p><br></p>';
+
+    const cellText = editor.querySelector("td")?.firstChild;
+    if (!(cellText instanceof Text)) {
+      throw new Error("cell text missing");
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(cellText, cellText.length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    const firstCell = editor.querySelector("td") as HTMLTableCellElement;
+    const beforeAlign = firstCell.style.textAlign;
+
+    editorInstance.applyCellProperties();
+    editorInstance.tablePropsCellAlignSelect.value = "center";
+    editorInstance.applyTablePropsDialog();
+
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.textAlign).toBe("center");
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.textAlign).toBe(beforeAlign);
+
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+    expect((editor.querySelector("td") as HTMLTableCellElement).style.textAlign).toBe("center");
+  });
+
+  it("does not throw when adding row before after undo/redo restoration", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertTable: (rows: number, cols: number) => void;
+      addRow: (side?: "before" | "after") => void;
+      applyMergeUndoSnapshot: () => boolean;
+      applyMergeRedoSnapshot: () => boolean;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = "<p><br></p>";
+
+    const paragraph = editor.querySelector("p") as HTMLParagraphElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editorInstance.insertTable(2, 2);
+    expect(editor.querySelectorAll("table.re-table").length).toBeGreaterThan(0);
+
+    expect(editorInstance.applyMergeUndoSnapshot()).toBe(true);
+    expect(editorInstance.applyMergeRedoSnapshot()).toBe(true);
+
+    const firstCellText = editor.querySelector("table.re-table td")?.firstChild;
+    if (!(firstCellText instanceof Text)) {
+      throw new Error("table cell text missing");
+    }
+
+    const cellRange = document.createRange();
+    cellRange.setStart(firstCellText, firstCellText.length);
+    cellRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(cellRange);
+
+    const tableBefore = editor.querySelector("table.re-table") as HTMLTableElement;
+    const rowsBefore = tableBefore.rows.length;
+
+    expect(() => editorInstance.addRow("before")).not.toThrow();
+
+    const tableAfter = editor.querySelector("table.re-table") as HTMLTableElement;
+    expect(tableAfter.rows.length).toBeGreaterThan(rowsBefore);
   });
 });
