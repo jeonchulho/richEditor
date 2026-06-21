@@ -1,0 +1,115 @@
+.re-emoji-picker {
+  position: absolute;
+  top: 70px;
+  left: 14px;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(48px, 1fr));
+  grid-auto-rows: 34px;
+  gap: 4px;
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(16px + (10 * 34px) + (9 * 4px));
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 16px 36px -20px rgba(15, 23, 42, 0.55);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f8fafc;
+}
+
+.re-emoji-picker::-webkit-scrollbar {
+  width: 8px;
+}
+
+.re-emoji-picker::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 999px;
+}
+
+.re-emoji-picker::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+  border: 2px solid #f8fafc;
+}
+
+.re-emoji-picker::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.re-emoji-picker[hidden] {
+  display: none !important;
+}
+
+.re-emoji-picker button {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 18px;
+}
+
+.re-mention-popup {
+  position: absolute;
+  z-index: 34;
+  width: min(260px, calc(100% - 24px));
+  max-height: 220px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  box-shadow: 0 16px 34px -20px rgba(15, 23, 42, 0.55);
+  overflow-y: auto;
+}
+
+.re-mention-popup[hidden] {
+  display: none !important;
+}
+
+.re-mention-list {
+  display: grid;
+  gap: 4px;
+}
+
+.re-mention-item {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.re-mention-item:hover,
+.re-mention-item.is-active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.re-mention-token {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0 8px;
+  margin: 0 1px;
+  background: #e0f2fe;
+  color: #0c4a6e;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .re-emoji-picker {
+    width: calc(100% - 24px);
+    grid-template-columns: repeat(5, minmax(44px, 1fr));
+  }
+}

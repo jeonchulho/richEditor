@@ -1,0 +1,190 @@
+.re-form-control-props {
+  position: absolute;
+  z-index: 34;
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100vh - 32px);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  box-shadow: 0 16px 34px -20px rgba(15, 23, 42, 0.55);
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.re-form-control-props[hidden] {
+  display: none !important;
+}
+
+.re-form-control-props-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.re-form-control-props-section-title {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.re-form-control-props label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.re-form-control-props [hidden] {
+  display: none !important;
+}
+
+.re-form-control-props input[type="text"] {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.re-form-control-props input[type="number"],
+.re-form-control-props select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+}
+
+.re-form-control-align-row,
+.re-form-control-position-row,
+.re-form-control-border-row {
+  display: inline-flex;
+  gap: 0;
+}
+
+.re-form-control-align-row button,
+.re-form-control-position-row button,
+.re-form-control-border-row button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  padding: 0;
+}
+
+.re-form-control-align-row button.re-active,
+.re-form-control-position-row button.re-active,
+.re-form-control-border-row button.re-active {
+  background: rgba(37, 99, 235, 0.18);
+  color: #1e3a8a;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.55);
+}
+
+.re-form-control-align-row button svg,
+.re-form-control-position-row button svg,
+.re-form-control-border-row button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.re-form-control-props [data-role="formControlPropsLabelAlignField"],
+.re-form-control-props [data-role="formControlPropsLabelPositionField"],
+.re-form-control-props [data-role="formControlPropsBorderScopeField"] {
+  gap: 6px;
+}
+
+.re-form-control-font-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 6px;
+}
+
+.re-form-control-label-font-row {
+  grid-template-columns: minmax(0, 1fr) 72px 28px 28px;
+  align-items: center;
+}
+
+.re-form-control-value-font-row {
+  grid-template-columns: minmax(0, 1fr) 72px 28px 28px;
+  align-items: center;
+}
+
+.re-form-control-font-row > * {
+  min-width: 0;
+}
+
+.re-form-control-label-font-row > [data-role="formControlPropsLabelFontColorField"],
+.re-form-control-label-font-row > [data-role="formControlPropsLabelBgColorField"],
+.re-form-control-value-font-row > [data-role="formControlPropsValueFontColorField"] {
+  display: inline-flex;
+}
+
+.re-form-control-label-font-row .re-color-trigger {
+  height: 28px;
+  min-width: 28px;
+}
+
+.re-form-control-props input[type="color"] {
+  width: 100%;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.re-form-control-props textarea {
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.re-form-control-props-checkline {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.re-form-control-props-checkline[hidden] {
+  display: none !important;
+}
+
+.re-form-control-props-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.re-form-control-props-actions button {
+  height: 28px;
+  min-width: 54px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 11px;
+}
+
+.re-form-control-props-actions button[data-action="applyFormControlProps"] {
+  border-color: #7dd3fc;
+  background: #e0f2fe;
+}

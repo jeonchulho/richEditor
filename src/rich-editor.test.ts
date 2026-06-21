@@ -236,6 +236,171 @@ describe("RichEditor mention filtering during composition", () => {
   });
 });
 
+describe("RichEditor form control clipboard", () => {
+  it("copies and pastes checkbox/radio/input/memo controls", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      insertFormControl: (type: "checkbox" | "radio" | "input" | "memo", labelText: string) => void;
+      setActiveFormControlWrapper: (next: HTMLElement | null) => void;
+      handleCopy: (event: ClipboardEvent) => void;
+      handlePaste: (event: ClipboardEvent) => void;
+    };
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const clipboardStore = new Map<string, string>();
+    const makeClipboard = (): DataTransfer => ({
+      getData: (type: string) => clipboardStore.get(type) ?? "",
+      setData: (type: string, value: string) => {
+        clipboardStore.set(type, value);
+        return true;
+      },
+      clearData: (type?: string) => {
+        if (typeof type === "string") {
+          clipboardStore.delete(type);
+          return;
+        }
+        clipboardStore.clear();
+      },
+      types: [],
+    } as unknown as DataTransfer);
+
+    const scenarios: Array<{ type: "checkbox" | "radio" | "input" | "memo"; label: string }> = [
+      { type: "checkbox", label: "체크 항목" },
+      { type: "radio", label: "선택지" },
+      { type: "input", label: "입력 항목" },
+      { type: "memo", label: "메모" },
+    ];
+
+    for (const scenario of scenarios) {
+      editor.innerHTML = "<p><br></p>";
+
+      const seedRange = document.createRange();
+      seedRange.selectNodeContents(editor);
+      seedRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(seedRange);
+
+      editorInstance.insertFormControl(scenario.type, scenario.label);
+
+      const wrapper = editor.querySelector(".re-form-control-wrap") as HTMLElement | null;
+      expect(wrapper).not.toBeNull();
+      if (!wrapper) {
+        throw new Error("wrapper missing");
+      }
+
+      editorInstance.setActiveFormControlWrapper(wrapper);
+
+      clipboardStore.clear();
+      const copyPrevent = vi.fn();
+      editorInstance.handleCopy({
+        clipboardData: makeClipboard(),
+        preventDefault: copyPrevent,
+      } as unknown as ClipboardEvent);
+
+      expect(copyPrevent).toHaveBeenCalled();
+      expect(clipboardStore.get("application/x-rich-editor-form-control")).toContain("re-form-control-wrap");
+
+      const pasteRange = document.createRange();
+      pasteRange.selectNodeContents(editor);
+      pasteRange.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(pasteRange);
+
+      const pastePrevent = vi.fn();
+      editorInstance.handlePaste({
+        clipboardData: makeClipboard(),
+        preventDefault: pastePrevent,
+      } as unknown as ClipboardEvent);
+      expect(pastePrevent).toHaveBeenCalled();
+
+      expect(editor.querySelectorAll(`.re-form-control-wrap[data-control-kind="${scenario.type}"]`).length).toBe(2);
+    }
+  });
+});
+
+describe("RichEditor object selection highlight", () => {
+  it("applies re-selection-active to table/image/form control when range selection intersects them", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<table class="re-table"><tbody><tr><td>셀</td></tr></tbody></table>',
+      '<span class="re-image-wrap" contenteditable="false"><img src="x" alt="x"></span>',
+      '<span class="re-form-control-wrap" contenteditable="false" data-control-kind="input"><span class="re-form-control-input" contenteditable="false"><input type="text" value="값"></span><span class="re-form-control-label" contenteditable="false">라벨</span></span>',
+    ].join("");
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const table = editor.querySelector("table") as HTMLTableElement;
+    const image = editor.querySelector(".re-image-wrap") as HTMLElement;
+    const formControl = editor.querySelector(".re-form-control-wrap") as HTMLElement;
+
+    const tableRange = document.createRange();
+    tableRange.selectNode(table);
+    selection.removeAllRanges();
+    selection.addRange(tableRange);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(table.classList.contains("re-selection-active")).toBe(true);
+
+    const imageRange = document.createRange();
+    imageRange.selectNode(image);
+    selection.removeAllRanges();
+    selection.addRange(imageRange);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(image.classList.contains("re-selection-active")).toBe(true);
+
+    const controlRange = document.createRange();
+    controlRange.selectNode(formControl);
+    selection.removeAllRanges();
+    selection.addRange(controlRange);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(formControl.classList.contains("re-selection-active")).toBe(true);
+  });
+
+  it("fills all intersected form objects (radio/checkbox/input/memo) on range selection", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    new RichEditor(root);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<span class="re-form-control-wrap" contenteditable="false" data-control-kind="radio"><span class="re-form-control-input" contenteditable="false"><input type="radio"></span><span class="re-form-control-label" contenteditable="false">라디오</span></span>',
+      '<span class="re-form-control-wrap" contenteditable="false" data-control-kind="checkbox"><span class="re-form-control-input" contenteditable="false"><input type="checkbox"></span><span class="re-form-control-label" contenteditable="false">체크</span></span>',
+      '<span class="re-form-control-wrap" contenteditable="false" data-control-kind="input"><span class="re-form-control-input" contenteditable="false"><input type="text" value="입력"></span><span class="re-form-control-label" contenteditable="false">입력 항목</span></span>',
+      '<span class="re-form-control-wrap" contenteditable="false" data-control-kind="memo"><span class="re-form-control-input" contenteditable="false"><textarea>메모</textarea></span><span class="re-form-control-label" contenteditable="false">메모 항목</span></span>',
+    ].join(" ");
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+
+    const wrappers = Array.from(editor.querySelectorAll(".re-form-control-wrap")) as HTMLElement[];
+    expect(wrappers.length).toBe(4);
+    expect(wrappers.every((node) => node.classList.contains("re-selection-active"))).toBe(true);
+  });
+});
+
 describe("RichEditor table insertion trailing paragraph", () => {
   it("keeps an editable paragraph after inserting a table at document end", () => {
     const root = document.createElement("div");
@@ -601,6 +766,43 @@ describe("RichEditor table structure normalization", () => {
     expect(paragraphs.length).toBe(1);
     expect(paragraphs[0]?.getAttribute("style")).toBeNull();
     expect(paragraphs[0]?.innerHTML.toLowerCase()).toContain("br");
+  });
+
+  it("does not reset typing style when clicking editor root near a table", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+
+    const editorInstance = new RichEditor(root) as unknown as {
+      resetTypingColorToDefault: () => void;
+    };
+
+    const resetSpy = vi.spyOn(editorInstance as unknown as Record<string, unknown>, "resetTypingColorToDefault" as never);
+
+    const editor = root.querySelector(".re-editor") as HTMLDivElement;
+    editor.innerHTML = [
+      '<div class="re-table-wrap"><table class="re-table"><tbody><tr><td>A</td></tr></tbody></table></div>',
+      "<p><br></p>",
+    ].join("");
+
+    const selection = window.getSelection();
+    if (!selection) {
+      throw new Error("selection unavailable");
+    }
+
+    const range = document.createRange();
+    range.setStart(editor, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    editor.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(editor.querySelector(':scope > span')).toBeNull();
+    expect(editor.querySelector(':scope > p > span[style*="font-size"]')).toBeNull();
   });
 
   it("wraps inserted table with div.re-table-wrap", () => {

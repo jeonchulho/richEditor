@@ -1,4 +1,4 @@
-import { PICKER_POPUPS_TEMPLATE, TABLE_CONTEXT_MENU_TEMPLATE } from "./components/popup-templates";
+import { PICKER_POPUPS_TEMPLATE } from "./components/popup-templates";
 import { TOOLBAR_TEMPLATE } from "./components/toolbar-template";
 
 // 에디터 루트 템플릿:
@@ -7,7 +7,6 @@ export const RICH_EDITOR_TEMPLATE = `
   <section class="re-shell">
     ${TOOLBAR_TEMPLATE}
     ${PICKER_POPUPS_TEMPLATE}
-    ${TABLE_CONTEXT_MENU_TEMPLATE}
     <article class="re-editor" contenteditable="true" spellcheck="true"></article>
     <section class="re-debug-panel-wrap" data-role="debugPanelWrap">
       <div class="re-debug-panel-toolbar">

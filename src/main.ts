@@ -2,11 +2,25 @@
 // 전역 스타일을 로드하고, #app 컨테이너에 RichEditor 인스턴스를 마운트한다.
 import "./styles.css";
 import { RichEditor } from "./rich-editor";
+import {
+  CHEVRON_DOWN_8,
+  TEMPLATE_SELECT_14,
+} from "./rich-editor/components/svg";
 
 const container = document.getElementById("app");
 if (!container) {
   throw new Error("Missing app container");
 }
+
+const svgToDataUrl = (svgMarkup: string): string => `url("data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgMarkup)}")`;
+
+const applySvgCssVariables = (): void => {
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--re-chevron-down-url", svgToDataUrl(CHEVRON_DOWN_8));
+  rootStyle.setProperty("--re-template-select-url", svgToDataUrl(TEMPLATE_SELECT_14));
+};
+
+applySvgCssVariables();
 
 const editor = new RichEditor(container, {
   // 에디터 문서 저장 키(localStorage)
@@ -29,7 +43,7 @@ type MentionApiPayload = string[] | { items?: string[] };
 const mentionApiEndpointFromEnv = import.meta.env.VITE_MENTION_API_ENDPOINT?.trim();
 const MENTION_API_ENDPOINT = mentionApiEndpointFromEnv && mentionApiEndpointFromEnv.length > 0
   ? mentionApiEndpointFromEnv
-  : "/api/mentions";
+  : null;
 
 const normalizeMentionItems = (items: unknown): string[] => {
   if (!Array.isArray(items)) {
@@ -51,6 +65,10 @@ const parseMentionItems = (payload: MentionApiPayload): string[] => {
 };
 
 const loadMentionItems = async (): Promise<void> => {
+  if (!MENTION_API_ENDPOINT) {
+    return;
+  }
+
   try {
     const response = await fetch(MENTION_API_ENDPOINT, {
       method: "GET",

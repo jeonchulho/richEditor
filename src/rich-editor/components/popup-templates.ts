@@ -1,7 +1,42 @@
-// 툴바에서 여는 picker 팝업(이모지/색상/테이블 크기) 템플릿.
-export const PICKER_POPUPS_TEMPLATE = `
-  <div class="re-emoji-picker" hidden></div>
+import {
+  ICON_FORM_ALIGN_CENTER,
+  ICON_FORM_ALIGN_LEFT,
+  ICON_FORM_ALIGN_RIGHT,
+  ICON_FORM_BORDER_SCOPE_ALL,
+  ICON_FORM_BORDER_SCOPE_INPUT,
+  ICON_FORM_LABEL_BOTTOM,
+  ICON_FORM_LABEL_LEFT,
+  ICON_FORM_LABEL_RIGHT,
+  ICON_FORM_LABEL_TOP,
+  ICON_TABLE_ALIGN_CENTER,
+  ICON_TABLE_ALIGN_LEFT,
+  ICON_TABLE_ALIGN_RIGHT,
+  ICON_TABLE_DELETE_COL,
+  ICON_TABLE_DELETE_ROW,
+  ICON_TABLE_INSERT,
+  ICON_TABLE_MENU_ADD,
+  ICON_TABLE_MENU_ADD_COL_LEFT,
+  ICON_TABLE_MENU_ADD_COL_RIGHT,
+  ICON_TABLE_MENU_ADD_ROW_ABOVE,
+  ICON_TABLE_MENU_ADD_ROW_BELOW,
+  ICON_TABLE_MENU_CELL_PROPS,
+  ICON_TABLE_MENU_COL_PROPS,
+  ICON_TABLE_MENU_DELETE_TABLE,
+  ICON_TABLE_MENU_DELETE_COL,
+  ICON_TABLE_MENU_DELETE_ROW,
+  ICON_TABLE_MENU_MERGE,
+  ICON_TABLE_MENU_ROW_PROPS,
+  ICON_TABLE_MENU_TABLE_PROPS,
+  ICON_TABLE_MENU_UNMERGE,
+  ICON_TABLE_MERGE,
+  ICON_TABLE_UNMERGE,
+} from "./svg";
 
+export const EMOJI_PICKER_TEMPLATE = `
+  <div class="re-emoji-picker" hidden></div>
+`;
+
+export const COLOR_PALETTE_TEMPLATE = `
   <div class="re-color-palette" data-role="colorPalette" data-mode="both" hidden>
     <button type="button" class="re-color-automatic" data-action="applyAutomaticColor">
       <span class="re-color-automatic-chip" data-role="automaticColorChip"></span>
@@ -33,16 +68,23 @@ export const PICKER_POPUPS_TEMPLATE = `
       <input type="color" data-role="moreColorInput" hidden />
     </div>
   </div>
+`;
 
+export const TABLE_SIZE_PICKER_TEMPLATE = `
   <div class="re-table-size-picker" hidden>
     <div class="re-table-size-info" data-role="tableSizeInfo">0 x 0</div>
     <div class="re-table-size-grid" data-role="tableSizeGrid"></div>
   </div>
+`;
 
+export const MENTION_POPUP_TEMPLATE = `
   <div class="re-mention-popup" data-role="mentionPopup" hidden>
     <div class="re-mention-list" data-role="mentionList"></div>
   </div>
+`;
 
+// 초기 렌더에서 항상 필요한 대형 속성 다이얼로그 템플릿.
+export const PICKER_POPUPS_TEMPLATE = `
   <div class="re-form-control-props" data-role="formControlPropsDialog" hidden>
     <div class="re-form-control-props-title" data-role="formControlPropsTitle">체크박스 속성</div>
     <div class="re-form-control-props-section-title" data-role="formControlPropsBasicSection">기본 정보</div>
@@ -125,28 +167,16 @@ export const PICKER_POPUPS_TEMPLATE = `
     <label data-role="formControlPropsLabelPositionField">라벨 위치
       <div class="re-form-control-position-row">
         <button type="button" data-action="setFormControlLabelPosition" data-position="left" title="라벨 왼쪽" aria-label="라벨 왼쪽">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="4" y="7" width="6" height="10" rx="1"></rect>
-            <path d="M12 7h8M12 11h8M12 15h8"></path>
-          </svg>
+          ${ICON_FORM_LABEL_LEFT}
         </button>
         <button type="button" data-action="setFormControlLabelPosition" data-position="right" title="라벨 오른쪽" aria-label="라벨 오른쪽">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 7h8M4 11h8M4 15h8"></path>
-            <rect x="14" y="7" width="6" height="10" rx="1"></rect>
-          </svg>
+          ${ICON_FORM_LABEL_RIGHT}
         </button>
         <button type="button" data-action="setFormControlLabelPosition" data-position="top" title="라벨 위" aria-label="라벨 위">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="7" y="14" width="10" height="6" rx="1"></rect>
-            <path d="M7 10h10M10 4v6M14 4v6"></path>
-          </svg>
+          ${ICON_FORM_LABEL_TOP}
         </button>
         <button type="button" data-action="setFormControlLabelPosition" data-position="bottom" title="라벨 아래" aria-label="라벨 아래">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M7 4h10M10 4v6M14 4v6"></path>
-            <rect x="7" y="11" width="10" height="6" rx="1"></rect>
-          </svg>
+          ${ICON_FORM_LABEL_BOTTOM}
         </button>
       </div>
       <input type="hidden" data-role="formControlPropsLabelPosition" value="left" />
@@ -157,19 +187,13 @@ export const PICKER_POPUPS_TEMPLATE = `
     <label data-role="formControlPropsLabelAlignField">라벨 정렬
       <div class="re-form-control-align-row">
         <button type="button" data-action="setFormControlLabelAlign" data-align="left" title="왼쪽 정렬" aria-label="왼쪽 정렬">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 7h14M5 11h10M5 15h14M5 19h10"></path>
-          </svg>
+          ${ICON_FORM_ALIGN_LEFT}
         </button>
         <button type="button" data-action="setFormControlLabelAlign" data-align="center" title="가운데 정렬" aria-label="가운데 정렬">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 7h14M7 11h10M5 15h14M7 19h10"></path>
-          </svg>
+          ${ICON_FORM_ALIGN_CENTER}
         </button>
         <button type="button" data-action="setFormControlLabelAlign" data-align="right" title="오른쪽 정렬" aria-label="오른쪽 정렬">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 7h14M9 11h10M5 15h14M9 19h10"></path>
-          </svg>
+          ${ICON_FORM_ALIGN_RIGHT}
         </button>
       </div>
       <input type="hidden" data-role="formControlPropsLabelAlign" value="left" />
@@ -178,16 +202,10 @@ export const PICKER_POPUPS_TEMPLATE = `
     <label data-role="formControlPropsBorderScopeField">테두리 범위
       <div class="re-form-control-border-row">
         <button type="button" data-action="setFormControlBorderScope" data-border-scope="input" title="입력박스만" aria-label="입력박스만">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="6" y="7" width="12" height="10" rx="1.5"></rect>
-            <path d="M8 11h8M8 14h6"></path>
-          </svg>
+          ${ICON_FORM_BORDER_SCOPE_INPUT}
         </button>
         <button type="button" data-action="setFormControlBorderScope" data-border-scope="all" title="라벨 포함 전체" aria-label="라벨 포함 전체">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="4" y="6" width="16" height="12" rx="1.5"></rect>
-            <path d="M7 6v12M7 11h10M11 6v12"></path>
-          </svg>
+          ${ICON_FORM_BORDER_SCOPE_ALL}
         </button>
       </div>
       <input type="hidden" data-role="formControlPropsBorderScope" value="input" />
@@ -259,37 +277,25 @@ export const PICKER_POPUPS_TEMPLATE = `
     <div class="re-table-props-tabs" data-role="tablePropsTabs">
       <button type="button" data-table-props-mode="table">
         <span class="re-table-props-tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" focusable="false">
-            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-            <path d="M3 10h18M9 4v16M15 4v16"></path>
-          </svg>
+          ${ICON_TABLE_MENU_TABLE_PROPS}
         </span>
         <span class="re-table-props-tab-label">테이블</span>
       </button>
       <button type="button" data-table-props-mode="row">
         <span class="re-table-props-tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" focusable="false">
-            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-            <path d="M3 9h18M3 14h18"></path>
-          </svg>
+          ${ICON_TABLE_MENU_ROW_PROPS}
         </span>
         <span class="re-table-props-tab-label">행</span>
       </button>
       <button type="button" data-table-props-mode="col">
         <span class="re-table-props-tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" focusable="false">
-            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-            <path d="M8 4v16M13 4v16M18 4v16"></path>
-          </svg>
+          ${ICON_TABLE_MENU_COL_PROPS}
         </span>
         <span class="re-table-props-tab-label">열</span>
       </button>
       <button type="button" data-table-props-mode="cell">
         <span class="re-table-props-tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" focusable="false">
-            <rect x="4" y="5" width="16" height="14" rx="2"></rect>
-            <path d="M4 10h16M12 5v14"></path>
-          </svg>
+          ${ICON_TABLE_MENU_CELL_PROPS}
         </span>
         <span class="re-table-props-tab-label">셀</span>
       </button>
@@ -472,82 +478,93 @@ export const TABLE_CONTEXT_MENU_TEMPLATE = `
   <div class="re-table-context-menu" data-role="tableContextMenu" hidden>
     <button type="button" data-table-action="tableProps">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M9 4v16M15 4v16"></path></svg>
+        ${ICON_TABLE_MENU_TABLE_PROPS}
       </span>
       <span>테이블 속성</span>
     </button>
     <button type="button" data-table-action="rowProps">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M3 14h18"></path></svg>
+        ${ICON_TABLE_MENU_ROW_PROPS}
       </span>
       <span>행 속성</span>
     </button>
     <button type="button" data-table-action="cellProps">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M4 10h16M12 5v14"></path></svg>
+        ${ICON_TABLE_MENU_CELL_PROPS}
       </span>
       <span>셀 속성</span>
     </button>
     <button type="button" data-table-action="colProps">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 4v16M13 4v16M18 4v16"></path></svg>
+        ${ICON_TABLE_MENU_COL_PROPS}
       </span>
       <span>열 속성</span>
     </button>
     <hr />
     <button type="button" data-table-action="mergeCells">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M3 7h18M3 17h18M8 7v10M16 7v10"></path><path d="M8 12h8"></path></svg>
+        ${ICON_TABLE_MENU_MERGE}
       </span>
       <span>셀 병합</span>
     </button>
     <button type="button" data-table-action="unmergeCell">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M3 7h18M3 17h18M8 7v10M16 7v10"></path><path d="M12 7v10"></path></svg>
+        ${ICON_TABLE_MENU_UNMERGE}
       </span>
       <span>셀 분리</span>
     </button>
     <hr />
-    <button type="button" data-table-action="addRowAbove">
-      <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M4 7h16M4 11h16M4 16h16"></path><path d="M12 3v4M10 5h4"></path></svg>
-      </span>
-      <span>행 위에 추가</span>
-    </button>
-    <button type="button" data-table-action="addRowBelow">
-      <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M4 7h16M4 12h16M4 16h16"></path><path d="M12 17v4M10 19h4"></path></svg>
-      </span>
-      <span>행 아래에 추가</span>
-    </button>
+    <div class="re-context-menu-item" data-submenu="insert">
+      <button type="button" class="re-context-submenu-trigger" aria-haspopup="menu" aria-expanded="false">
+        <span class="re-table-menu-icon" aria-hidden="true">
+          ${ICON_TABLE_MENU_ADD}
+        </span>
+        <span>추가</span>
+        <span class="re-context-submenu-caret" aria-hidden="true">›</span>
+      </button>
+      <div class="re-context-submenu" data-submenu-for="insert" hidden>
+        <button type="button" data-table-action="addRowAbove">
+          <span class="re-table-menu-icon" aria-hidden="true">
+            ${ICON_TABLE_MENU_ADD_ROW_ABOVE}
+          </span>
+          <span>행 위에 추가</span>
+        </button>
+        <button type="button" data-table-action="addRowBelow">
+          <span class="re-table-menu-icon" aria-hidden="true">
+            ${ICON_TABLE_MENU_ADD_ROW_BELOW}
+          </span>
+          <span>행 아래에 추가</span>
+        </button>
+        <button type="button" data-table-action="addColLeft">
+          <span class="re-table-menu-icon" aria-hidden="true">
+            ${ICON_TABLE_MENU_ADD_COL_LEFT}
+          </span>
+          <span>열 왼쪽에 추가</span>
+        </button>
+        <button type="button" data-table-action="addColRight">
+          <span class="re-table-menu-icon" aria-hidden="true">
+            ${ICON_TABLE_MENU_ADD_COL_RIGHT}
+          </span>
+          <span>열 오른쪽에 추가</span>
+        </button>
+      </div>
+    </div>
     <button type="button" data-table-action="deleteRow">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"></path><path d="M9 12h6"></path></svg>
+        ${ICON_TABLE_MENU_DELETE_ROW}
       </span>
       <span>행 삭제</span>
     </button>
-    <button type="button" data-table-action="addColLeft">
-      <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M7 4v16M12 4v16M17 4v16"></path><path d="M3 12h4M5 10v4"></path></svg>
-      </span>
-      <span>열 왼쪽에 추가</span>
-    </button>
-    <button type="button" data-table-action="addColRight">
-      <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M7 4v16M12 4v16M17 4v16"></path><path d="M17 12h4M19 10v4"></path></svg>
-      </span>
-      <span>열 오른쪽에 추가</span>
-    </button>
     <button type="button" data-table-action="deleteCol">
       <span class="re-table-menu-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><path d="M7 4v16M12 4v16M17 4v16"></path><path d="M12 9v6"></path></svg>
+        ${ICON_TABLE_MENU_DELETE_COL}
       </span>
       <span>열 삭제</span>
     </button>
     <hr />
     <button type="button" data-table-action="deleteTable">
       <span class="re-table-menu-icon re-table-menu-icon-delete" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18M9 5v14M15 5v14"></path><path class="re-table-menu-delete-mark" d="M8.7 8.6l6.6 6.8M15.3 8.6l-6.6 6.8"></path></svg>
+        ${ICON_TABLE_MENU_DELETE_TABLE}
       </span>
       <span>테이블 삭제</span>
     </button>

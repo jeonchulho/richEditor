@@ -1,4 +1,4 @@
-import type { CellAnchor, TableMatrix } from "../types";
+import type { CellAnchor, TableMatrix } from "../../types";
 import { buildTableMatrix } from "./table-helpers";
 
 function pickClosestCellInRow(rowCells: Array<HTMLTableCellElement | null>, preferredCol: number): HTMLTableCellElement | null {

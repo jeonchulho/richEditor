@@ -1,43 +1,58 @@
 import { cleanPasteHtml, cleanPasteText } from "./clean-paste";
 import { bindRichEditorEvents } from "./rich-editor/components/event-bindings";
 import {
-  buildTableMatrix as buildTableMatrixHelper,
-  collectCellsInRect as collectCellsInRectHelper,
-  getAdjacentCell as getAdjacentCellHelper,
-  getWrappedHorizontalCell as getWrappedHorizontalCellHelper,
-  getWrappedVerticalCell as getWrappedVerticalCellHelper,
-  normalizeRectForSpans as normalizeRectForSpansHelper,
-} from "./rich-editor/components/table-helpers";
-import {
+  TableContextMenuComponent,
+  TablePropsDialogComponent,
   addCol as addColOp,
   addRow as addRowOp,
+  buildTableMatrix as buildTableMatrixHelper,
+  clearSelectedCells as clearSelectedCellsHelper,
+  collectCellsInRect as collectCellsInRectHelper,
   deleteCol as deleteColOp,
   deleteRow as deleteRowOp,
   deleteTable as deleteTableOp,
-  mergeCells as mergeCellsOp,
-  unmergeCell as unmergeCellOp,
-} from "./rich-editor/components/table-ops";
-import { handleTableNavigationKeydown as handleTableNavigationKeydownHelper } from "./rich-editor/components/table-navigation";
-import {
-  clearSelectedCells as clearSelectedCellsHelper,
+  getAdjacentCell as getAdjacentCellHelper,
+  getWrappedHorizontalCell as getWrappedHorizontalCellHelper,
+  getWrappedVerticalCell as getWrappedVerticalCellHelper,
+  handleTableNavigationKeydown as handleTableNavigationKeydownHelper,
   handleTableSelectionKeydown as handleTableSelectionKeydownHelper,
+  mergeCells as mergeCellsOp,
+  normalizeRectForSpans as normalizeRectForSpansHelper,
+  renderTableSizeGrid,
   selectCellRectangle as selectCellRectangleHelper,
   toggleCellSelection as toggleCellSelectionHelper,
-} from "./rich-editor/components/table-selection";
+  unmergeCell as unmergeCellOp,
+  updateTableSizeGridPreview,
+} from "./rich-editor/components/table/index";
 import {
+  AnchoredPopupController,
+} from "./rich-editor/components/popup/controllers";
+import {
+  hidePopupElement,
   positionPopupAtPoint,
   positionPopupNearAnchor,
+  positionPopupNearAnchorInViewport,
+} from "./rich-editor/components/popup/positioning";
+import {
   renderColorSwatches,
   renderEmojiButtons,
-  renderTableSizeGrid,
-  updateTableSizeGridPreview,
-} from "./rich-editor/components/popup-components";
+  renderTemplatePresetOptions,
+} from "./rich-editor/components/popup/renderers";
+import { FormControlPropsDialogComponent } from "./rich-editor/components/popup/dialogs";
 import {
   DEFAULT_AUTOSAVE_DELAY,
   DEFAULT_STORAGE_KEY,
   STANDARD_COLOR_SWATCHES,
   THEME_COLOR_SWATCHES,
 } from "./rich-editor/constants";
+import { getPresetTemplateHtml, WEEKLY_REPORT_TEMPLATE_HTML } from "./rich-editor/templates";
+import {
+  COLOR_PALETTE_TEMPLATE,
+  EMOJI_PICKER_TEMPLATE,
+  MENTION_POPUP_TEMPLATE,
+  TABLE_CONTEXT_MENU_TEMPLATE,
+  TABLE_SIZE_PICKER_TEMPLATE,
+} from "./rich-editor/components/popup-templates";
 import { INITIAL_EDITOR_HTML, RICH_EDITOR_TEMPLATE } from "./rich-editor/template";
 import type {
   CellAnchor,
@@ -78,6 +93,7 @@ const DEFAULT_MENTION_ITEMS = [
 ] as const;
 const DEFAULT_MENTION_TRIGGER = "@";
 const DEFAULT_MENTION_MAX_RESULTS = 8;
+const FORM_CONTROL_CLIPBOARD_MIME = "application/x-rich-editor-form-control";
 
 // RichEditor 핵심 클래스.
 // 책임 범위:
@@ -99,7 +115,8 @@ export class RichEditor {
   };
   private toolbar!: HTMLDivElement;
   private editor!: HTMLDivElement;
-  private colorPalette!: HTMLDivElement;
+  private colorPalette: HTMLDivElement | null = null;
+  private colorPaletteController: AnchoredPopupController | null = null;
   private textColorButton!: HTMLButtonElement;
   private bgColorButton!: HTMLButtonElement;
   private colorPaletteAnchorButton: HTMLButtonElement | null = null;
@@ -108,13 +125,17 @@ export class RichEditor {
   private bgColorChip!: HTMLSpanElement;
   private readonly recentTextColors: string[] = [];
   private readonly recentBgColors: string[] = [];
-  private emojiPicker!: HTMLDivElement;
+  private emojiPicker: HTMLDivElement | null = null;
+  private emojiPickerController: AnchoredPopupController | null = null;
   private emojiButton!: HTMLButtonElement;
   private tableInsertButton!: HTMLButtonElement;
-  private tableSizePicker!: HTMLDivElement;
-  private tableSizeInfo!: HTMLDivElement;
-  private mentionPopup!: HTMLDivElement;
-  private mentionList!: HTMLDivElement;
+  private tableSizePicker: HTMLDivElement | null = null;
+  private tableSizePickerController: AnchoredPopupController | null = null;
+  private tableSizeInfo: HTMLDivElement | null = null;
+  private mentionPopup: HTMLDivElement | null = null;
+  private mentionPopupController: AnchoredPopupController | null = null;
+  private mentionPopupAnchorPoint: { x: number; y: number } | null = null;
+  private mentionList: HTMLDivElement | null = null;
   private formControlPropsDialog!: HTMLDivElement;
   private formControlPropsTitle!: HTMLDivElement;
   private formControlPropsBasicSection!: HTMLElement;
@@ -128,6 +149,8 @@ export class RichEditor {
   private formControlLabelBgColorChip!: HTMLSpanElement;
   private formControlValueColorChip!: HTMLSpanElement;
   private formControlColorPalette!: HTMLDivElement;
+  private formControlColorPaletteController: AnchoredPopupController | null = null;
+  private formControlColorAnchor: HTMLElement | null = null;
   private formControlColorAutomaticChip!: HTMLSpanElement;
   private formControlColorThemeColorGrid!: HTMLDivElement;
   private formControlColorStandardColorGrid!: HTMLDivElement;
@@ -157,10 +180,13 @@ export class RichEditor {
   private formControlPropsCheckedInput!: HTMLInputElement;
   private formControlPropsDisabledField!: HTMLElement;
   private formControlPropsDisabledInput!: HTMLInputElement;
+  private formControlPropsComponent!: FormControlPropsDialogComponent;
   private readonly formControlPropsHistory = new Map<string, { states: string[]; index: number }>();
-  private tableContextMenu!: HTMLDivElement;
+  private tableContextMenu: HTMLDivElement | null = null;
+  private tableContextMenuComponent: TableContextMenuComponent | null = null;
   private tablePropsBackdrop!: HTMLDivElement;
   private tablePropsDialog!: HTMLDivElement;
+  private tablePropsComponent!: TablePropsDialogComponent;
   private tablePropsDragHandle!: HTMLDivElement;
   private tablePropsMinimizeButton!: HTMLButtonElement;
   private tablePropsTitle!: HTMLDivElement;
@@ -365,19 +391,19 @@ export class RichEditor {
 
     this.toolbar = this.root.querySelector(".re-toolbar") as HTMLDivElement;
     this.editor = this.root.querySelector(".re-editor") as HTMLDivElement;
-    this.colorPalette = this.root.querySelector('[data-role="colorPalette"]') as HTMLDivElement;
+    this.colorPalette = null;
     this.textColorButton = this.root.querySelector('[data-action="textColorPalette"]') as HTMLButtonElement;
     this.bgColorButton = this.root.querySelector('[data-action="bgColorPalette"]') as HTMLButtonElement;
     this.colorPaletteAnchorButton = this.textColorButton;
     this.textColorChip = this.root.querySelector('[data-role="textColorChip"]') as HTMLSpanElement;
     this.bgColorChip = this.root.querySelector('[data-role="bgColorChip"]') as HTMLSpanElement;
-    this.emojiPicker = this.root.querySelector(".re-emoji-picker") as HTMLDivElement;
+    this.emojiPicker = null;
     this.emojiButton = this.root.querySelector('[data-action="emoji"]') as HTMLButtonElement;
     this.tableInsertButton = this.root.querySelector('[data-table="insert"]') as HTMLButtonElement;
-    this.tableSizePicker = this.root.querySelector('.re-table-size-picker') as HTMLDivElement;
-    this.tableSizeInfo = this.root.querySelector('[data-role="tableSizeInfo"]') as HTMLDivElement;
-    this.mentionPopup = this.root.querySelector('[data-role="mentionPopup"]') as HTMLDivElement;
-    this.mentionList = this.root.querySelector('[data-role="mentionList"]') as HTMLDivElement;
+    this.tableSizePicker = null;
+    this.tableSizeInfo = null;
+    this.mentionPopup = null;
+    this.mentionList = null;
     this.formControlPropsDialog = this.root.querySelector('[data-role="formControlPropsDialog"]') as HTMLDivElement;
     this.formControlPropsTitle = this.root.querySelector('[data-role="formControlPropsTitle"]') as HTMLDivElement;
     this.formControlPropsBasicSection = this.root.querySelector('[data-role="formControlPropsBasicSection"]') as HTMLElement;
@@ -385,6 +411,14 @@ export class RichEditor {
     this.formControlPropsTextSection = this.root.querySelector('[data-role="formControlPropsTextSection"]') as HTMLElement;
     this.formControlPropsChoiceSection = this.root.querySelector('[data-role="formControlPropsChoiceSection"]') as HTMLElement;
     this.formControlPropsLabelInput = this.root.querySelector('[data-role="formControlPropsLabel"]') as HTMLInputElement;
+    if (!this.formControlPropsLabelInput) {
+      const fallbackLabelInput = document.createElement("input");
+      fallbackLabelInput.type = "text";
+      fallbackLabelInput.dataset.role = "formControlPropsLabel";
+      fallbackLabelInput.hidden = true;
+      this.formControlPropsBasicSection.appendChild(fallbackLabelInput);
+      this.formControlPropsLabelInput = fallbackLabelInput;
+    }
     this.formControlPropsLabelFontNameSelect = this.root.querySelector('[data-role="formControlPropsLabelFontName"]') as HTMLSelectElement;
     this.formControlPropsLabelFontSizeSelect = this.root.querySelector('[data-role="formControlPropsLabelFontSize"]') as HTMLSelectElement;
     this.formControlLabelColorChip = this.root.querySelector('[data-role="formControlLabelColorChip"]') as HTMLSpanElement;
@@ -420,9 +454,12 @@ export class RichEditor {
     this.formControlPropsCheckedInput = this.root.querySelector('[data-role="formControlPropsChecked"]') as HTMLInputElement;
     this.formControlPropsDisabledField = this.root.querySelector('[data-role="formControlPropsDisabledField"]') as HTMLElement;
     this.formControlPropsDisabledInput = this.root.querySelector('[data-role="formControlPropsDisabled"]') as HTMLInputElement;
-    this.tableContextMenu = this.root.querySelector('[data-role="tableContextMenu"]') as HTMLDivElement;
+    this.formControlPropsComponent = new FormControlPropsDialogComponent(this.root, this.formControlPropsDialog);
+    this.tableContextMenu = null;
+    this.tableContextMenuComponent = null;
     this.tablePropsBackdrop = this.root.querySelector('[data-role="tablePropsBackdrop"]') as HTMLDivElement;
     this.tablePropsDialog = this.root.querySelector('[data-role="tablePropsDialog"]') as HTMLDivElement;
+    this.tablePropsComponent = new TablePropsDialogComponent(this.root, this.tablePropsDialog, this.tablePropsBackdrop);
     this.tablePropsDragHandle = this.root.querySelector('[data-role="tablePropsDragHandle"]') as HTMLDivElement;
     this.tablePropsMinimizeButton = this.root.querySelector('[data-action="toggleTablePropsCollapse"]') as HTMLButtonElement;
     this.tablePropsTitle = this.root.querySelector('[data-role="tablePropsTitle"]') as HTMLDivElement;
@@ -488,13 +525,194 @@ export class RichEditor {
 
     this.updateMergeActionUi(0, 0, 0);
 
-    this.renderEmojiPicker();
-    this.renderColorPalette();
+    renderTemplatePresetOptions(this.root);
     this.renderFormControlColorPalette();
-    this.renderTableSizePicker();
     this.renderTablePropsRecentColors();
 
     this.editor.innerHTML = INITIAL_EDITOR_HTML;
+  }
+
+  private getShellElement(): HTMLElement | null {
+    return this.root.querySelector(".re-shell") as HTMLElement | null;
+  }
+
+  private createPopupElementFromTemplate(templateHtml: string): HTMLElement | null {
+    const shell = this.getShellElement();
+    if (!shell) {
+      return null;
+    }
+
+    const template = document.createElement("template");
+    template.innerHTML = templateHtml.trim();
+    const element = template.content.firstElementChild as HTMLElement | null;
+    if (!element) {
+      return null;
+    }
+
+    shell.appendChild(element);
+    return element;
+  }
+
+  private ensureColorPalette(): HTMLDivElement | null {
+    if (this.colorPalette) {
+      return this.colorPalette;
+    }
+
+    const element = this.createPopupElementFromTemplate(COLOR_PALETTE_TEMPLATE) as HTMLDivElement | null;
+    if (!element) {
+      return null;
+    }
+
+    this.colorPalette = element;
+    this.renderColorPalette();
+    return this.colorPalette;
+  }
+
+  private getColorPaletteController(): AnchoredPopupController {
+    if (this.colorPaletteController) {
+      return this.colorPaletteController;
+    }
+
+    this.colorPaletteController = new AnchoredPopupController(
+      () => this.ensureColorPalette(),
+      () => {
+        this.positionColorPalette();
+      },
+    );
+    return this.colorPaletteController;
+  }
+
+  private ensureEmojiPicker(): HTMLDivElement | null {
+    if (this.emojiPicker) {
+      return this.emojiPicker;
+    }
+
+    const element = this.createPopupElementFromTemplate(EMOJI_PICKER_TEMPLATE) as HTMLDivElement | null;
+    if (!element) {
+      return null;
+    }
+
+    this.emojiPicker = element;
+    this.renderEmojiPicker();
+    return this.emojiPicker;
+  }
+
+  private getEmojiPickerController(): AnchoredPopupController {
+    if (this.emojiPickerController) {
+      return this.emojiPickerController;
+    }
+
+    this.emojiPickerController = new AnchoredPopupController(
+      () => this.ensureEmojiPicker(),
+      () => {
+        this.positionEmojiPicker();
+      },
+    );
+    return this.emojiPickerController;
+  }
+
+  private ensureTableSizePicker(): HTMLDivElement | null {
+    if (this.tableSizePicker && this.tableSizeInfo) {
+      return this.tableSizePicker;
+    }
+
+    const picker = this.createPopupElementFromTemplate(TABLE_SIZE_PICKER_TEMPLATE) as HTMLDivElement | null;
+    if (!picker) {
+      return null;
+    }
+
+    this.tableSizePicker = picker;
+    this.tableSizeInfo = picker.querySelector('[data-role="tableSizeInfo"]') as HTMLDivElement;
+    this.renderTableSizePicker();
+    return this.tableSizePicker;
+  }
+
+  private getTableSizePickerController(): AnchoredPopupController {
+    if (this.tableSizePickerController) {
+      return this.tableSizePickerController;
+    }
+
+    this.tableSizePickerController = new AnchoredPopupController(
+      () => this.ensureTableSizePicker(),
+      () => {
+        this.positionTableSizePicker();
+      },
+    );
+    return this.tableSizePickerController;
+  }
+
+  private getFormControlColorPaletteController(): AnchoredPopupController {
+    if (this.formControlColorPaletteController) {
+      return this.formControlColorPaletteController;
+    }
+
+    this.formControlColorPaletteController = new AnchoredPopupController(
+      () => this.formControlColorPalette,
+      (popup) => {
+        const anchor = this.formControlColorAnchor;
+        if (!anchor) {
+          return;
+        }
+
+        popup.style.position = "fixed";
+        positionPopupNearAnchorInViewport(anchor, popup, { centerAnchor: true });
+      },
+    );
+    return this.formControlColorPaletteController;
+  }
+
+  private ensureMentionPopup(): HTMLDivElement | null {
+    if (this.mentionPopup && this.mentionList) {
+      return this.mentionPopup;
+    }
+
+    const popup = this.createPopupElementFromTemplate(MENTION_POPUP_TEMPLATE) as HTMLDivElement | null;
+    if (!popup) {
+      return null;
+    }
+
+    this.mentionPopup = popup;
+    this.mentionList = popup.querySelector('[data-role="mentionList"]') as HTMLDivElement;
+    return this.mentionPopup;
+  }
+
+  private getMentionPopupController(): AnchoredPopupController {
+    if (this.mentionPopupController) {
+      return this.mentionPopupController;
+    }
+
+    this.mentionPopupController = new AnchoredPopupController(
+      () => this.mentionPopup,
+      (popup) => {
+        const shell = this.getShellElement();
+        const anchorPoint = this.mentionPopupAnchorPoint;
+        if (!shell || !anchorPoint) {
+          return;
+        }
+
+        positionPopupAtPoint(shell, popup, anchorPoint.x, anchorPoint.y);
+      },
+    );
+    return this.mentionPopupController;
+  }
+
+  private ensureTableContextMenu(): HTMLDivElement | null {
+    if (this.tableContextMenu) {
+      return this.tableContextMenu;
+    }
+
+    const menu = this.createPopupElementFromTemplate(TABLE_CONTEXT_MENU_TEMPLATE) as HTMLDivElement | null;
+    if (!menu) {
+      return null;
+    }
+
+    this.tableContextMenu = menu;
+    this.tableContextMenuComponent = new TableContextMenuComponent(this.root, menu);
+    return this.tableContextMenu;
+  }
+
+  private isColorPaletteOpen(): boolean {
+    return Boolean(this.colorPalette && !this.colorPalette.hidden);
   }
 
   // 이벤트 바인딩은 별도 모듈에서 위임 처리한다.
@@ -503,45 +721,36 @@ export class RichEditor {
   }
 
   private showTableContextMenu(clientX: number, clientY: number): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+    const menu = this.ensureTableContextMenu();
+    if (!menu || !this.tableContextMenuComponent) {
       return;
     }
 
-    this.tableContextMenu.hidden = false;
-    this.tableContextMenu.style.visibility = "hidden";
-
-    positionPopupAtPoint(shell, this.tableContextMenu, clientX, clientY);
-    this.tableContextMenu.style.visibility = "";
+    this.tableContextMenuComponent.showAt(clientX, clientY);
   }
 
   private hideTableContextMenu(): void {
-    this.tableContextMenu.hidden = true;
-  }
-
-  private showTablePropsDialog(): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+    if (this.tableContextMenuComponent) {
+      this.tableContextMenuComponent.hide();
       return;
     }
 
-    this.tablePropsBackdrop.hidden = false;
-    this.tablePropsDialog.hidden = false;
-    this.tablePropsDialog.style.visibility = "hidden";
+    if (this.tableContextMenu) {
+      this.tableContextMenu.hidden = true;
+    }
+  }
+
+  private showTablePropsDialog(): void {
+    if (!this.tablePropsComponent) {
+      return;
+    }
+
     this.syncAllTablePropsColorPickers();
 
-    const shellRect = shell.getBoundingClientRect();
-    const dialogWidth = this.tablePropsDialog.offsetWidth;
-    const dialogHeight = this.tablePropsDialog.offsetHeight;
-    const centeredLeft = Math.max(12, Math.round((shellRect.width - dialogWidth) / 2));
-    const centeredTop = Math.max(20, Math.round((shellRect.height - dialogHeight) / 2));
-    const preferred = this.tablePropsDialogLastPosition ?? { left: centeredLeft, top: centeredTop };
-    const clamped = this.clampTablePropsDialogPosition(preferred.left, preferred.top, shellRect, dialogWidth, dialogHeight);
-    this.tablePropsDialog.style.left = `${clamped.left}px`;
-    this.tablePropsDialog.style.top = `${clamped.top}px`;
-    this.tablePropsDialogLastPosition = clamped;
-
-    this.tablePropsDialog.style.visibility = "";
+    const placed = this.tablePropsComponent.showCentered(this.tablePropsDialogLastPosition);
+    if (placed) {
+      this.tablePropsDialogLastPosition = placed;
+    }
     this.applyTablePropsDialogCollapsedState();
 
     const focusTarget = this.activeTablePropsMode === "table"
@@ -556,6 +765,11 @@ export class RichEditor {
   }
 
   private hideTablePropsDialog(): void {
+    if (this.tablePropsComponent) {
+      this.tablePropsComponent.hide();
+      return;
+    }
+
     this.tablePropsBackdrop.hidden = true;
     this.tablePropsDialog.hidden = true;
     this.tablePropsDialog.classList.remove("is-dragging");
@@ -1866,7 +2080,7 @@ export class RichEditor {
   private insertWeeklyReportTemplate(): void {
     const beforeHtml = this.editor.innerHTML;
     const temp = document.createElement("div");
-    temp.innerHTML = this.getWeeklyReportTemplateHtml().trim();
+    temp.innerHTML = WEEKLY_REPORT_TEMPLATE_HTML.trim();
 
     // 업무보고서 템플릿의 top-level table도 일반 삽입 테이블과 동일하게 wrapper를 적용한다.
     for (const child of Array.from(temp.children)) {
@@ -1955,18 +2169,9 @@ export class RichEditor {
       return;
     }
 
-    if (templateType === "meetingNotes") {
-      this.insertSimpleTemplate(this.getMeetingNotesTemplateHtml());
-      return;
-    }
-
-    if (templateType === "projectStatus") {
-      this.insertSimpleTemplate(this.getProjectStatusTemplateHtml());
-      return;
-    }
-
-    if (templateType === "dailyChecklist") {
-      this.insertSimpleTemplate(this.getDailyChecklistTemplateHtml());
+    const html = getPresetTemplateHtml(templateType);
+    if (html) {
+      this.insertSimpleTemplate(html);
     }
   }
 
@@ -2008,192 +2213,6 @@ export class RichEditor {
 
     this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
-  }
-
-  private getWeeklyReportTemplateHtml(): string {
-    return `
-      <h2 class="re-report-title">주간 업무보고서</h2>
-      <table class="re-table re-report-sign-table">
-        <tr>
-          <td class="re-report-sign-head">담</td>
-          <td class="re-report-sign-head">당</td>
-          <td class="re-report-sign-head"></td>
-          <td class="re-report-sign-head"></td>
-        </tr>
-        <tr>
-          <td class="re-report-sign-body"></td>
-          <td class="re-report-sign-body"></td>
-          <td class="re-report-sign-body"></td>
-          <td class="re-report-sign-body"></td>
-        </tr>
-      </table>
-      <table class="re-table re-report-main-table">
-        <tr>
-          <td class="re-report-accent re-table-header-cell">기 간</td>
-          <td colspan="2">20 년 8월 14일 ~ 20 년 8월 18일</td>
-          <td class="re-table-header-cell">보고자</td>
-          <td>김민지</td>
-        </tr>
-        <tr>
-          <td class="re-report-accent re-table-header-cell">구 분</td>
-          <td class="re-report-day-col re-table-header-cell">요일</td>
-          <td class="re-table-header-cell">업무명</td>
-          <td colspan="2" class="re-table-header-cell">업무실적</td>
-        </tr>
-        <tr>
-          <td rowspan="6" class="re-report-accent re-report-section-cell re-table-header-cell">금주<br>업무실적</td>
-          <td class="re-report-day-col">월</td>
-          <td>- 주간 생산 스케줄 확인 및 조정<br>- 원재료 재고 현황 확인</td>
-          <td colspan="2">- 스케줄 정상 조정 완료<br>- 5톤 부족</td>
-        </tr>
-        <tr>
-          <td class="re-report-day-col">화</td>
-          <td>- 제품 품질 점검<br>- 신제품 생산 라인 시험생산</td>
-          <td colspan="2">- 3개 불량 발견<br>- 시험생산 정상 진행</td>
-        </tr>
-        <tr>
-          <td class="re-report-day-col">수</td>
-          <td>- 작업자 안전 교육 진행<br>- 생산 공정 최적화 회의</td>
-          <td colspan="2">- 전체 인원 참석<br>- 2개 공정 개선안 도출</td>
-        </tr>
-        <tr>
-          <td class="re-report-day-col">목</td>
-          <td>- 제품 배송 준비<br>- 생산량 및 품질 보고서 작성</td>
-          <td colspan="2">- 500개 제품 배송 준비 완료<br>- 보고서 초안 완성</td>
-        </tr>
-        <tr>
-          <td class="re-report-day-col">금</td>
-          <td>- 원재료 발주 계획<br>- 주간 생산 결과 회의</td>
-          <td colspan="2">- 발주 계획서 작성 완료<br>- 주요 이슈 3개 도출</td>
-        </tr>
-        <tr>
-          <td class="re-report-day-col">시간외</td>
-          <td>기계 유지보수</td>
-          <td colspan="2">2대 기계 보수 완료</td>
-        </tr>
-        <tr>
-          <td class="re-report-accent re-report-section-cell re-table-header-cell">다음주<br>업무계획</td>
-          <td colspan="4" class="re-report-bullets-cell">- 원재료 5톤 추가 발주 진행<br>- 불량 제품 원인 분석 및 개선 방안 마련<br>- 생산 공정 개선안 적용 및 효과 검증<br>- 안전 교육 내용 재점검 및 추가 교육 계획</td>
-        </tr>
-        <tr>
-          <td colspan="2" class="re-table-header-cell">업무지시 및 추진사항</td>
-          <td colspan="3" class="re-table-header-cell">애로 및 건의사항</td>
-        </tr>
-        <tr>
-          <td colspan="2" class="re-report-note-cell">- 원재료 부족 문제에 대한 재고 관리 시스템 개선 요청<br>- 불량 제품에 대한 피드백을 품질 관리팀에 전달<br>- 다음주 중요한 생산 팀 강화 계획</td>
-          <td colspan="3" class="re-report-note-cell">- 원재료 재고 관리 시스템의 정확성 문제 개선 필요<br>- 품질 점검 시간을 더 확보할 필요성 제기</td>
-        </tr>
-      </table>
-    `;
-  }
-
-  private getMeetingNotesTemplateHtml(): string {
-    return `
-      <h2>회의록</h2>
-      <table class="re-table">
-        <tr>
-          <td class="re-table-header-cell">회의명</td>
-          <td>정기 운영 회의</td>
-          <td class="re-table-header-cell">일시</td>
-          <td>2026-06-20 10:00</td>
-        </tr>
-        <tr>
-          <td class="re-table-header-cell">참석자</td>
-          <td colspan="3">김민지, 박준호, 이수현</td>
-        </tr>
-      </table>
-      <table class="re-table">
-        <tr>
-          <td class="re-table-header-cell">안건</td>
-          <td class="re-table-header-cell">논의 내용</td>
-          <td class="re-table-header-cell">결정 사항</td>
-          <td class="re-table-header-cell">담당</td>
-          <td class="re-table-header-cell">기한</td>
-        </tr>
-        <tr>
-          <td><br></td>
-          <td><br></td>
-          <td><br></td>
-          <td><br></td>
-          <td><br></td>
-        </tr>
-      </table>
-    `;
-  }
-
-  private getProjectStatusTemplateHtml(): string {
-    return `
-      <h2>프로젝트 현황</h2>
-      <table class="re-table">
-        <tr>
-          <td class="re-table-header-cell">프로젝트</td>
-          <td>리치 에디터 고도화</td>
-          <td class="re-table-header-cell">주차</td>
-          <td>3주차</td>
-        </tr>
-        <tr>
-          <td class="re-table-header-cell">PM</td>
-          <td>최윤아</td>
-          <td class="re-table-header-cell">상태</td>
-          <td>진행 중</td>
-        </tr>
-      </table>
-      <table class="re-table">
-        <tr>
-          <td class="re-table-header-cell">구분</td>
-          <td class="re-table-header-cell">항목</td>
-          <td class="re-table-header-cell">진척도</td>
-          <td class="re-table-header-cell">이슈</td>
-          <td class="re-table-header-cell">대응 계획</td>
-        </tr>
-        <tr>
-          <td>완료</td>
-          <td><br></td>
-          <td>100%</td>
-          <td><br></td>
-          <td><br></td>
-        </tr>
-        <tr>
-          <td>진행</td>
-          <td><br></td>
-          <td>60%</td>
-          <td><br></td>
-          <td><br></td>
-        </tr>
-      </table>
-    `;
-  }
-
-  private getDailyChecklistTemplateHtml(): string {
-    return `
-      <h2>일일 체크리스트</h2>
-      <table class="re-table">
-        <tr>
-          <td class="re-table-header-cell">No</td>
-          <td class="re-table-header-cell">체크 항목</td>
-          <td class="re-table-header-cell">결과</td>
-          <td class="re-table-header-cell">비고</td>
-        </tr>
-        <tr>
-          <td>1</td>
-          <td><br></td>
-          <td>□ 완료 / □ 미완료</td>
-          <td><br></td>
-        </tr>
-        <tr>
-          <td>2</td>
-          <td><br></td>
-          <td>□ 완료 / □ 미완료</td>
-          <td><br></td>
-        </tr>
-        <tr>
-          <td>3</td>
-          <td><br></td>
-          <td>□ 완료 / □ 미완료</td>
-          <td><br></td>
-        </tr>
-      </table>
-    `;
   }
 
   private getSelectedCell(): HTMLTableCellElement | null {
@@ -3016,7 +3035,20 @@ export class RichEditor {
     }
 
     if (target === this.editor) {
-      return true;
+      const activeRange = this.getActiveEditorRange();
+      if (!activeRange || !activeRange.collapsed || !this.editor.contains(activeRange.commonAncestorContainer)) {
+        return false;
+      }
+
+      const startElement = this.getRangeStartContainerElement(activeRange);
+      const block = startElement?.closest("p,div") as HTMLElement | null;
+      if (!block || !this.editor.contains(block)) {
+        return false;
+      }
+
+      const text = (block.textContent ?? "").replace(/\u200B/g, "").trim();
+      const hasEmbedded = Boolean(block.querySelector("img,table,.re-image-wrap,.re-table-wrap"));
+      return text.length === 0 && !hasEmbedded;
     }
 
     const block = target.closest("p,div") as HTMLElement | null;
@@ -3025,7 +3057,7 @@ export class RichEditor {
     }
 
     const text = (block.textContent ?? "").replace(/\u200B/g, "").trim();
-    const hasEmbedded = Boolean(block.querySelector("img,table"));
+    const hasEmbedded = Boolean(block.querySelector("img,table,.re-image-wrap,.re-table-wrap"));
     return text.length === 0 && !hasEmbedded;
   }
 
@@ -3043,6 +3075,34 @@ export class RichEditor {
     const bgStyle = this.bgColorChip.style.background || "";
     const hasNoFillPattern = bgStyle.includes("linear-gradient");
     const bgColor = hasNoFillPattern ? "transparent" : (this.normalizeColorToHex(bgStyle) ?? "transparent");
+
+    const block = this.getSelectionBlock();
+    const canApplyToEmptyBlock = Boolean(
+      block
+      && this.editor.contains(block)
+      && !block.closest("td,th")
+      && !this.isMeaningfulEditableText(block.textContent ?? "")
+      && !block.querySelector("img,table,.re-image-wrap,.re-table-wrap"),
+    );
+
+    if (canApplyToEmptyBlock && block) {
+      if (fontNameSelect?.value) {
+        this.setStylePriority(block, "fontFamily", fontNameSelect.value);
+      }
+      if (fontSizeSelect?.value) {
+        this.setStylePriority(block, "fontSize", fontSizeSelect.value);
+      }
+      this.setStylePriority(block, "color", textColor);
+      if (bgColor === "transparent") {
+        block.style.removeProperty("background-color");
+      } else {
+        this.setStylePriority(block, "backgroundColor", bgColor);
+      }
+      if ((block.textContent ?? "").length === 0 && block.querySelector("br") === null) {
+        block.innerHTML = "<br>";
+      }
+      return;
+    }
 
     if (fontNameSelect?.value) {
       this.exec("fontName", fontNameSelect.value);
@@ -4998,8 +5058,26 @@ export class RichEditor {
 
   private showFormControlPropsDialog(wrapper: HTMLElement): void {
     const parts = this.getFormControlParts(wrapper);
-    const shell = this.root.querySelector('.re-shell') as HTMLElement | null;
-    if (!parts || !shell) {
+    if (!parts) {
+      return;
+    }
+
+    if (
+      !this.formControlPropsLabelFontNameSelect ||
+      !this.formControlPropsLabelFontSizeSelect ||
+      !this.formControlPropsValueFontNameSelect ||
+      !this.formControlPropsValueFontSizeSelect ||
+      !this.formControlPropsLabelFontColorField ||
+      !this.formControlPropsLabelBgColorField ||
+      !this.formControlPropsValueFontField ||
+      !this.formControlPropsLabelPositionField ||
+      !this.formControlPropsLabelAlignField ||
+      !this.formControlPropsBorderScopeField ||
+      !this.formControlPropsPlaceholderField ||
+      !this.formControlPropsValueField ||
+      !this.formControlPropsCheckedField ||
+      !this.formControlPropsDisabledField
+    ) {
       return;
     }
 
@@ -5087,10 +5165,7 @@ export class RichEditor {
     this.reorderFormControlPropsFields(type);
     this.hideFormControlColorPalette();
 
-    this.formControlPropsDialog.hidden = false;
-    this.formControlPropsDialog.style.visibility = 'hidden';
-    positionPopupNearAnchor(shell, wrapper, this.formControlPropsDialog, { centerAnchor: true });
-    this.formControlPropsDialog.style.visibility = '';
+    this.formControlPropsComponent.showFor(wrapper);
     this.formControlPropsLabelInput.focus();
     this.formControlPropsLabelInput.select();
   }
@@ -5139,10 +5214,12 @@ export class RichEditor {
   }
 
   private hideFormControlPropsDialog(): void {
-    this.formControlPropsDialog.hidden = true;
+    this.formControlPropsComponent.hide();
     this.hideFormControlColorPalette();
     if (this.colorPaletteOwner === "formControlLabelBg" || this.colorPaletteOwner === "formControlValueColor") {
-      this.colorPalette.hidden = true;
+      if (this.colorPalette) {
+        this.colorPalette.hidden = true;
+      }
       this.endToolbarInteraction();
     }
     this.formControlPropsTarget = null;
@@ -5236,6 +5313,11 @@ export class RichEditor {
   }
 
   private toggleToolbarBgPaletteForFormControlLabel(): void {
+    const colorPalette = this.ensureColorPalette();
+    if (!colorPalette) {
+      return;
+    }
+
     const anchor = this.formControlPropsDialog.querySelector('[data-action="toggleFormControlColorPalette"][data-target="labelBg"]') as HTMLButtonElement | null;
     if (!anchor) {
       return;
@@ -5243,8 +5325,8 @@ export class RichEditor {
 
     const isSameOwner = this.colorPaletteOwner === "formControlLabelBg";
     const isSameAnchor = this.colorPaletteAnchorButton === anchor;
-    if (!this.colorPalette.hidden && isSameOwner && isSameAnchor) {
-      this.colorPalette.hidden = true;
+    if (!colorPalette.hidden && isSameOwner && isSameAnchor) {
+      hidePopupElement(colorPalette);
       this.endToolbarInteraction();
       return;
     }
@@ -5252,30 +5334,27 @@ export class RichEditor {
     this.hideFormControlColorPalette();
     this.colorPaletteOwner = "formControlLabelBg";
     this.colorPaletteAnchorButton = anchor;
-    this.colorPalette.dataset.mode = "hiliteColor";
+    colorPalette.dataset.mode = "hiliteColor";
     this.syncColorPaletteModeUi("hiliteColor");
     this.refreshRecentColorSwatches();
     this.textColorButton.classList.remove("re-active");
     this.bgColorButton.classList.remove("re-active");
 
-    const moreColorInput = this.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+    const moreColorInput = colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
     const current = this.normalizeColorToHex(this.formControlPropsLabelBgColorInput.value) ?? "#ffffff";
     if (moreColorInput) {
       moreColorInput.value = current;
     }
 
-    if (this.colorPalette.hidden) {
-      this.colorPalette.hidden = false;
-      this.colorPalette.style.visibility = "hidden";
-      this.positionColorPalette();
-      this.colorPalette.style.visibility = "";
-      return;
-    }
-
-    this.positionColorPalette();
+    this.getColorPaletteController().show();
   }
 
   private toggleToolbarTextPaletteForFormControlValue(): void {
+    const colorPalette = this.ensureColorPalette();
+    if (!colorPalette) {
+      return;
+    }
+
     const anchor = this.formControlPropsDialog.querySelector('[data-action="toggleFormControlColorPalette"][data-target="value"]') as HTMLButtonElement | null;
     if (!anchor) {
       return;
@@ -5283,8 +5362,8 @@ export class RichEditor {
 
     const isSameOwner = this.colorPaletteOwner === "formControlValueColor";
     const isSameAnchor = this.colorPaletteAnchorButton === anchor;
-    if (!this.colorPalette.hidden && isSameOwner && isSameAnchor) {
-      this.colorPalette.hidden = true;
+    if (!colorPalette.hidden && isSameOwner && isSameAnchor) {
+      hidePopupElement(colorPalette);
       this.endToolbarInteraction();
       return;
     }
@@ -5292,33 +5371,25 @@ export class RichEditor {
     this.hideFormControlColorPalette();
     this.colorPaletteOwner = "formControlValueColor";
     this.colorPaletteAnchorButton = anchor;
-    this.colorPalette.dataset.mode = "foreColor";
+    colorPalette.dataset.mode = "foreColor";
     this.syncColorPaletteModeUi("foreColor");
     this.refreshRecentColorSwatches();
     this.textColorButton.classList.remove("re-active");
     this.bgColorButton.classList.remove("re-active");
 
-    const moreColorInput = this.colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
+    const moreColorInput = colorPalette.querySelector('[data-role="moreColorInput"]') as HTMLInputElement | null;
     const current = this.normalizeColorToHex(this.formControlPropsValueFontColorInput.value) ?? "#111827";
     if (moreColorInput) {
       moreColorInput.value = current;
     }
 
-    if (this.colorPalette.hidden) {
-      this.colorPalette.hidden = false;
-      this.colorPalette.style.visibility = "hidden";
-      this.positionColorPalette();
-      this.colorPalette.style.visibility = "";
-      return;
-    }
-
-    this.positionColorPalette();
+    this.getColorPaletteController().show();
   }
 
   private applyFormControlLabelBgColorFromToolbarPalette(color: string): void {
     this.setFormControlColor("labelBg", color);
     this.pushRecentFormControlColor(color);
-    this.colorPalette.hidden = true;
+    hidePopupElement(this.colorPalette);
     this.endToolbarInteraction();
   }
 
@@ -5329,7 +5400,7 @@ export class RichEditor {
   private applyFormControlValueColorFromToolbarPalette(color: string): void {
     this.setFormControlColor("value", color);
     this.pushRecentFormControlColor(color);
-    this.colorPalette.hidden = true;
+    hidePopupElement(this.colorPalette);
     this.endToolbarInteraction();
   }
 
@@ -5380,9 +5451,8 @@ export class RichEditor {
       return;
     }
 
-    const shell = this.formControlPropsDialog;
     const anchor = this.formControlPropsDialog.querySelector(`[data-action="toggleFormControlColorPalette"][data-target="${target}"]`) as HTMLElement | null;
-    if (!shell || !anchor) {
+    if (!anchor) {
       return;
     }
 
@@ -5398,29 +5468,13 @@ export class RichEditor {
     this.formControlColorMoreColorInput.value = this.normalizeColorToHex(current) ?? "#111827";
     this.formControlColorAutomaticChip.style.background = current;
 
-    this.formControlColorPalette.hidden = false;
-    this.formControlColorPalette.style.visibility = 'hidden';
-    this.formControlColorPalette.style.position = 'fixed';
-    const anchorRect = anchor.getBoundingClientRect();
-    const paletteRect = this.formControlColorPalette.getBoundingClientRect();
-    const gap = 8;
-    const minLeft = gap;
-    const maxLeft = Math.max(minLeft, window.innerWidth - paletteRect.width - gap);
-    const preferredLeft = anchorRect.left + (anchorRect.width / 2) - (paletteRect.width / 2);
-    const left = Math.min(maxLeft, Math.max(minLeft, preferredLeft));
-    const belowTop = anchorRect.bottom + gap;
-    const aboveTop = anchorRect.top - paletteRect.height - gap;
-    const maxTop = Math.max(gap, window.innerHeight - paletteRect.height - gap);
-    const top = belowTop + paletteRect.height <= window.innerHeight - gap
-      ? belowTop
-      : Math.max(gap, Math.min(maxTop, aboveTop));
-    this.formControlColorPalette.style.left = `${left}px`;
-    this.formControlColorPalette.style.top = `${top}px`;
-    this.formControlColorPalette.style.visibility = '';
+    this.formControlColorAnchor = anchor;
+    this.getFormControlColorPaletteController().show();
   }
 
   private hideFormControlColorPalette(): void {
-    this.formControlColorPalette.hidden = true;
+    this.formControlColorAnchor = null;
+    this.getFormControlColorPaletteController().hide();
   }
 
   private applyFormControlColor(color: string): void {
@@ -5773,7 +5827,12 @@ export class RichEditor {
 
   // 이모지 팝업 버튼 렌더링 및 선택 시 복원/삽입 흐름을 담당한다.
   private renderEmojiPicker(): void {
-    renderEmojiButtons(this.emojiPicker, (emoji) => {
+    const emojiPicker = this.ensureEmojiPicker();
+    if (!emojiPicker) {
+      return;
+    }
+
+    renderEmojiButtons(emojiPicker, (emoji) => {
       const beforeRange = this.getActiveEditorRange();
       const beforeCell = this.getSelectedCell();
       this.debugLog(`emoji select start emoji=${emoji} range=${this.describeRange(beforeRange)} cell=${beforeCell ? this.describeCell(beforeCell) : "none"}`);
@@ -5795,52 +5854,60 @@ export class RichEditor {
       const insertedRange = this.getActiveEditorRange();
       const insertedCell = this.getSelectedCell();
       this.debugLog(`emoji select inserted range=${this.describeRange(insertedRange)} cell=${insertedCell ? this.describeCell(insertedCell) : "none"}`);
-      this.emojiPicker.hidden = true;
+      hidePopupElement(emojiPicker);
       this.captureSelection();
     });
   }
 
   private renderColorPalette(): void {
+    const colorPalette = this.ensureColorPalette();
+    if (!colorPalette) {
+      return;
+    }
+
     renderColorSwatches(this.root);
     this.syncColorPaletteModeUi("foreColor");
     this.refreshRecentColorSwatches();
+    hidePopupElement(colorPalette);
   }
 
   private toggleColorPalette(mode: "foreColor" | "hiliteColor"): void {
+    const colorPalette = this.ensureColorPalette();
+    if (!colorPalette) {
+      return;
+    }
+
     this.colorPaletteOwner = "toolbar";
     const nextAnchor = mode === "foreColor" ? this.textColorButton : this.bgColorButton;
     const isSameAnchor = this.colorPaletteAnchorButton === nextAnchor;
-    const isOpen = !this.colorPalette.hidden;
+    const isOpen = !colorPalette.hidden;
 
-    this.colorPalette.dataset.mode = mode;
+    colorPalette.dataset.mode = mode;
     this.syncColorPaletteModeUi(mode);
     this.refreshRecentColorSwatches();
     this.textColorButton.classList.toggle("re-active", mode === "foreColor");
     this.bgColorButton.classList.toggle("re-active", mode === "hiliteColor");
 
     if (isOpen && isSameAnchor) {
-      this.colorPalette.hidden = true;
+      this.getColorPaletteController().hide();
       this.endToolbarInteraction();
       return;
     }
 
     this.colorPaletteAnchorButton = nextAnchor;
-    if (this.colorPalette.hidden) {
-      // 오픈 직전에 툴바 상태를 갱신해 팔레트 selected 표시를 최신화한다.
-      this.updateToolbarState();
-      this.colorPalette.hidden = false;
-      this.colorPalette.style.visibility = "hidden";
-      this.positionColorPalette();
-      this.colorPalette.style.visibility = "";
-      return;
-    }
-
-    this.positionColorPalette();
+    // 오픈 직전에 툴바 상태를 갱신해 팔레트 selected 표시를 최신화한다.
+    this.updateToolbarState();
+    this.getColorPaletteController().show();
   }
 
   private syncColorPaletteModeUi(mode: "foreColor" | "hiliteColor"): void {
-    const label = this.colorPalette.querySelector('[data-role="automaticColorLabel"]') as HTMLSpanElement | null;
-    const chip = this.colorPalette.querySelector('[data-role="automaticColorChip"]') as HTMLSpanElement | null;
+    const colorPalette = this.colorPalette;
+    if (!colorPalette) {
+      return;
+    }
+
+    const label = colorPalette.querySelector('[data-role="automaticColorLabel"]') as HTMLSpanElement | null;
+    const chip = colorPalette.querySelector('[data-role="automaticColorChip"]') as HTMLSpanElement | null;
     if (!label || !chip) {
       return;
     }
@@ -5870,12 +5937,17 @@ export class RichEditor {
   }
 
   private refreshRecentColorSwatches(): void {
-    const grid = this.colorPalette.querySelector('[data-role="recentColorGrid"]') as HTMLDivElement | null;
+    const colorPalette = this.colorPalette;
+    if (!colorPalette) {
+      return;
+    }
+
+    const grid = colorPalette.querySelector('[data-role="recentColorGrid"]') as HTMLDivElement | null;
     if (!grid) {
       return;
     }
 
-    const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
+    const mode = colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
     const source = mode === "hiliteColor" ? this.recentBgColors : this.recentTextColors;
     const swatches = Array.from(grid.querySelectorAll("button")) as HTMLButtonElement[];
 
@@ -5909,7 +5981,12 @@ export class RichEditor {
     try {
       const picker = new EyeDropperCtor();
       const result = await picker.open();
-      const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
+      const colorPalette = this.colorPalette;
+      if (!colorPalette) {
+        return;
+      }
+
+      const mode = colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
       this.applyFormattingRoleChange(mode, result.sRGBHex, "palette");
       this.pushRecentPaletteColor(mode, result.sRGBHex);
       this.updateToolbarState();
@@ -5919,8 +5996,9 @@ export class RichEditor {
   }
 
   private positionColorPalette(): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+    const shell = this.getShellElement();
+    const colorPalette = this.colorPalette;
+    if (!shell || !colorPalette) {
       return;
     }
 
@@ -5928,11 +6006,16 @@ export class RichEditor {
       return;
     }
 
-    positionPopupNearAnchor(shell, this.colorPaletteAnchorButton, this.colorPalette);
+    positionPopupNearAnchor(shell, this.colorPaletteAnchorButton, colorPalette);
   }
 
   // 테이블 크기 picker(10x10)의 hover/drag/click 상호작용을 연결한다.
   private renderTableSizePicker(): void {
+    const tableSizePicker = this.ensureTableSizePicker();
+    if (!tableSizePicker) {
+      return;
+    }
+
     const grid = this.root.querySelector('[data-role="tableSizeGrid"]') as HTMLDivElement;
     renderTableSizeGrid(grid, {
       onHover: (row, col) => {
@@ -5970,16 +6053,19 @@ export class RichEditor {
     this.tableHoverRows = 0;
     this.tableHoverCols = 0;
     this.updateTableSizePreview();
+    tableSizePicker.hidden = true;
   }
 
   private toggleTableSizePicker(): void {
-    if (this.tableSizePicker.hidden) {
+    const tableSizePicker = this.ensureTableSizePicker();
+    if (!tableSizePicker) {
+      return;
+    }
+
+    if (tableSizePicker.hidden) {
       // 팝업 오픈 전에 selection을 고정해 삽입 지점이 변하지 않게 한다.
       this.captureSelection();
-      this.tableSizePicker.hidden = false;
-      this.tableSizePicker.style.visibility = "hidden";
-      this.positionTableSizePicker();
-      this.tableSizePicker.style.visibility = "";
+      this.getTableSizePickerController().show();
       return;
     }
 
@@ -5987,7 +6073,7 @@ export class RichEditor {
   }
 
   private hideTableSizePicker(): void {
-    this.tableSizePicker.hidden = true;
+    this.getTableSizePickerController().hide();
     this.tableGridSelecting = false;
     this.tableGridInsertedByDrag = false;
     this.tableHoverRows = 0;
@@ -6006,46 +6092,58 @@ export class RichEditor {
   }
 
   private positionTableSizePicker(): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+    const shell = this.getShellElement();
+    const tableSizePicker = this.ensureTableSizePicker();
+    if (!shell || !tableSizePicker) {
       return;
     }
 
-    positionPopupNearAnchor(shell, this.tableInsertButton, this.tableSizePicker);
+    positionPopupNearAnchor(shell, this.tableInsertButton, tableSizePicker);
   }
 
   private updateTableSizePreview(): void {
-    updateTableSizeGridPreview(this.tableSizeInfo, this.tableSizePicker, this.tableHoverRows, this.tableHoverCols);
+    const tableSizePicker = this.ensureTableSizePicker();
+    if (!tableSizePicker || !this.tableSizeInfo) {
+      return;
+    }
+    updateTableSizeGridPreview(this.tableSizeInfo, tableSizePicker, this.tableHoverRows, this.tableHoverCols);
   }
 
   private toggleEmojiPicker(): void {
-    // 이모지 삽입 위치 보존을 위해 오픈 시점 selection을 캡처한다.
-    this.captureSelection();
-    if (this.emojiPicker.hidden) {
-      this.emojiPicker.hidden = false;
-      this.emojiPicker.style.visibility = "hidden";
-      this.positionEmojiPicker();
-      this.emojiPicker.style.visibility = "";
+    const emojiPicker = this.ensureEmojiPicker();
+    if (!emojiPicker) {
       return;
     }
 
-    this.emojiPicker.hidden = true;
+    // 이모지 삽입 위치 보존을 위해 오픈 시점 selection을 캡처한다.
+    this.captureSelection();
+    if (emojiPicker.hidden) {
+      this.getEmojiPickerController().show();
+      return;
+    }
+
+    this.getEmojiPickerController().hide();
   }
 
   private positionEmojiPicker(): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+    const shell = this.getShellElement();
+    const emojiPicker = this.ensureEmojiPicker();
+    if (!shell || !emojiPicker) {
       return;
     }
 
-    positionPopupNearAnchor(shell, this.emojiButton, this.emojiPicker, { centerAnchor: true });
+    positionPopupNearAnchor(shell, this.emojiButton, emojiPicker, { centerAnchor: true });
   }
 
   private isMentionPopupVisible(): boolean {
-    return !this.mentionPopup.hidden;
+    return Boolean(this.mentionPopup && !this.mentionPopup.hidden);
   }
 
   private openMentionPopupFromMatch(match: { query: string; range: Range }): boolean {
+    if (!this.ensureMentionPopup()) {
+      return false;
+    }
+
     this.mentionQuery = match.query;
     this.mentionReplaceRange = match.range;
     this.mentionCandidates = this.getMentionCandidates(match.query);
@@ -6056,18 +6154,21 @@ export class RichEditor {
 
     this.mentionActiveIndex = 0;
     this.renderMentionCandidates();
-    this.positionMentionPopup(match.range);
+    this.positionMentionPopup(match.range, true);
     window.requestAnimationFrame(() => this.scrollActiveMentionIntoView());
     return true;
   }
 
   private hideMentionPopup(): void {
-    this.mentionPopup.hidden = true;
+    this.mentionPopupAnchorPoint = null;
+    this.getMentionPopupController().hide();
     this.mentionCandidates = [];
     this.mentionActiveIndex = 0;
     this.mentionQuery = "";
     this.mentionReplaceRange = null;
-    this.mentionList.innerHTML = "";
+    if (this.mentionList) {
+      this.mentionList.innerHTML = "";
+    }
   }
 
   private updateMentionAutocompleteFromSelection(compositionText = ""): void {
@@ -6113,7 +6214,7 @@ export class RichEditor {
       this.mentionActiveIndex = Math.min(this.mentionActiveIndex, this.mentionCandidates.length - 1);
     }
     this.renderMentionCandidates();
-    this.positionMentionPopup(match.range);
+    this.positionMentionPopup(match.range, !this.isMentionPopupVisible());
     window.requestAnimationFrame(() => this.scrollActiveMentionIntoView());
   }
 
@@ -6309,6 +6410,10 @@ export class RichEditor {
   }
 
   private renderMentionCandidates(): void {
+    if (!this.ensureMentionPopup() || !this.mentionList) {
+      return;
+    }
+
     const options = this.mentionCandidates
       .map((name, index) => {
         const activeClass = index === this.mentionActiveIndex ? " is-active" : "";
@@ -6317,36 +6422,45 @@ export class RichEditor {
       .join("");
 
     this.mentionList.innerHTML = options;
-    this.mentionPopup.hidden = false;
     this.scrollActiveMentionIntoView();
   }
 
   private scrollActiveMentionIntoView(): void {
+    if (!this.mentionList) {
+      return;
+    }
     const active = this.mentionList.querySelector(".re-mention-item.is-active") as HTMLElement | null;
     if (active && typeof active.scrollIntoView === "function") {
       active.scrollIntoView({ block: "nearest" });
     }
   }
 
-  private positionMentionPopup(anchorRange: Range): void {
-    const shell = this.root.querySelector(".re-shell") as HTMLElement | null;
-    if (!shell) {
+  private positionMentionPopup(anchorRange: Range, openIfHidden = false): void {
+    if (!this.ensureMentionPopup()) {
       return;
     }
 
     if (typeof anchorRange.getBoundingClientRect !== "function") {
-      this.mentionPopup.style.visibility = "";
-      this.mentionPopup.hidden = false;
+      this.mentionPopupAnchorPoint = null;
+      if (openIfHidden) {
+        this.getMentionPopupController().show();
+      } else {
+        this.getMentionPopupController().repositionIfOpen();
+      }
       return;
     }
 
     const rect = anchorRange.getBoundingClientRect();
-    const x = rect.left;
-    const y = rect.bottom;
-    this.mentionPopup.style.visibility = "hidden";
-    this.mentionPopup.hidden = false;
-    positionPopupAtPoint(shell, this.mentionPopup, x, y + 4);
-    this.mentionPopup.style.visibility = "";
+    this.mentionPopupAnchorPoint = {
+      x: rect.left,
+      y: rect.bottom + 4,
+    };
+    if (openIfHidden) {
+      this.getMentionPopupController().show();
+      return;
+    }
+
+    this.getMentionPopupController().repositionIfOpen();
   }
 
   private moveMentionActiveIndex(step: 1 | -1): void {
@@ -6588,12 +6702,17 @@ export class RichEditor {
   }
 
   private handleMentionClick(target: EventTarget | null): boolean {
+    const mentionPopup = this.ensureMentionPopup();
+    if (!mentionPopup) {
+      return false;
+    }
+
     if (!(target instanceof HTMLElement)) {
       return false;
     }
 
     const option = target.closest("[data-mention-index]") as HTMLElement | null;
-    if (!option || !this.mentionPopup.contains(option)) {
+    if (!option || !mentionPopup.contains(option)) {
       return false;
     }
 
@@ -6606,9 +6725,247 @@ export class RichEditor {
     return this.applyMentionAtActiveIndex();
   }
 
+  private getClipboardTargetFormControl(): HTMLElement | null {
+    const active = this.activeFormControlWrapper;
+    if (active && active.isConnected && this.editor.contains(active)) {
+      return active;
+    }
+
+    const range = this.getActiveEditorRange();
+    if (!range) {
+      return null;
+    }
+
+    const startEl = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+    const fromSelection = startEl?.closest(".re-form-control-wrap") as HTMLElement | null;
+    if (!fromSelection || !this.editor.contains(fromSelection)) {
+      return null;
+    }
+
+    return fromSelection;
+  }
+
+  private buildFormControlClipboardPayload(wrapper: HTMLElement): { html: string; text: string; kind: string } | null {
+    const clone = wrapper.cloneNode(true) as HTMLElement;
+    clone.classList.remove("re-active");
+    clone.contentEditable = "false";
+
+    const parts = this.getFormControlParts(clone);
+    if (!parts) {
+      return null;
+    }
+
+    const kind = this.resolveFormControlKind(clone, parts.control);
+    const labelText = (parts.label.textContent ?? "").trim();
+    const valueText = (parts.control.value ?? "").trim();
+    const checkedText = parts.control instanceof HTMLInputElement && (kind === "checkbox" || kind === "radio") && parts.control.checked
+      ? "checked"
+      : "";
+    const text = [labelText, valueText, checkedText].filter((item) => item.length > 0).join(" ").trim();
+    return { html: clone.outerHTML, text, kind };
+  }
+
+  private copyActiveFormControlToClipboard(event: ClipboardEvent): boolean {
+    if (!event.clipboardData) {
+      return false;
+    }
+
+    if (this.shouldUseNativeClipboardSelection()) {
+      return false;
+    }
+
+    const wrapper = this.getClipboardTargetFormControl();
+    if (!wrapper) {
+      return false;
+    }
+
+    const payload = this.buildFormControlClipboardPayload(wrapper);
+    if (!payload) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", payload.text.length > 0 ? payload.text : payload.kind);
+    event.clipboardData.setData("text/html", payload.html);
+    event.clipboardData.setData(FORM_CONTROL_CLIPBOARD_MIME, JSON.stringify(payload));
+    this.debugLog(`form control copied kind=${payload.kind} id=${wrapper.dataset.controlId ?? "none"}`);
+    this.showSaveStatus("Form control copied");
+    return true;
+  }
+
+  private cutActiveFormControlToClipboard(event: ClipboardEvent): boolean {
+    if (!this.copyActiveFormControlToClipboard(event)) {
+      return false;
+    }
+
+    const wrapper = this.getClipboardTargetFormControl();
+    if (!wrapper) {
+      return false;
+    }
+
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.setStartBefore(wrapper);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    if (this.formControlPropsTarget === wrapper) {
+      this.hideFormControlPropsDialog();
+    }
+    if (this.activeFormControlWrapper === wrapper) {
+      this.setActiveFormControlWrapper(null);
+    }
+
+    wrapper.remove();
+    this.captureSelection();
+    this.debouncedSave();
+    this.showSaveStatus("Form control cut");
+    return true;
+  }
+
+  private normalizePastedFormControlWrapper(wrapper: HTMLElement): HTMLElement | null {
+    wrapper.classList.remove("re-active");
+    wrapper.classList.add("re-form-control-wrap");
+    wrapper.contentEditable = "false";
+
+    for (const blocked of Array.from(wrapper.querySelectorAll("script,style,iframe"))) {
+      blocked.remove();
+    }
+
+    for (const element of Array.from(wrapper.querySelectorAll("*")) as HTMLElement[]) {
+      for (const attr of Array.from(element.attributes)) {
+        if (attr.name.toLowerCase().startsWith("on")) {
+          element.removeAttribute(attr.name);
+        }
+      }
+    }
+
+    const inputWrap = wrapper.querySelector(":scope > .re-form-control-input") as HTMLElement | null;
+    const label = wrapper.querySelector(":scope > .re-form-control-label") as HTMLElement | null;
+    const control = wrapper.querySelector(":scope > .re-form-control-input input, :scope > .re-form-control-input textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!inputWrap || !label || !control) {
+      return null;
+    }
+
+    inputWrap.contentEditable = "false";
+    label.contentEditable = "false";
+    control.removeAttribute("contenteditable");
+
+    const kind = this.resolveFormControlKind(wrapper, control);
+    wrapper.dataset.controlKind = kind;
+
+    if (kind === "radio" && control instanceof HTMLInputElement) {
+      control.type = "radio";
+      control.name = `re-radio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    } else if (kind === "checkbox" && control instanceof HTMLInputElement) {
+      control.type = "checkbox";
+      control.removeAttribute("name");
+    } else if (kind === "input" && control instanceof HTMLInputElement) {
+      control.type = "text";
+    }
+
+    if (!wrapper.querySelector(":scope > .re-form-control-handle")) {
+      const handlePoints: Array<"nw" | "ne" | "sw" | "se"> = ["nw", "ne", "sw", "se"];
+      for (const key of handlePoints) {
+        const handle = document.createElement("span");
+        handle.className = `re-form-control-handle re-form-control-handle-${key}`;
+        handle.contentEditable = "false";
+        wrapper.appendChild(handle);
+      }
+    }
+
+    this.ensureFormControlId(wrapper);
+    return wrapper;
+  }
+
+  private pasteFormControlFromClipboard(event: ClipboardEvent): boolean {
+    const clipboard = event.clipboardData;
+    if (!clipboard) {
+      return false;
+    }
+
+    let html = "";
+    const customRaw = clipboard.getData(FORM_CONTROL_CLIPBOARD_MIME)?.trim() ?? "";
+    if (customRaw.length > 0) {
+      try {
+        const parsed = JSON.parse(customRaw) as { html?: string };
+        html = typeof parsed.html === "string" ? parsed.html.trim() : "";
+      } catch {
+        html = "";
+      }
+    }
+
+    if (html.length === 0) {
+      const rawHtml = clipboard.getData("text/html")?.trim() ?? "";
+      if (rawHtml.length > 0) {
+        const doc = new DOMParser().parseFromString(rawHtml, "text/html");
+        const wrappers = Array.from(doc.body.querySelectorAll(".re-form-control-wrap"));
+        if (wrappers.length === 1) {
+          const bodyClone = doc.body.cloneNode(true) as HTMLElement;
+          for (const wrapper of Array.from(bodyClone.querySelectorAll(".re-form-control-wrap"))) {
+            wrapper.remove();
+          }
+
+          const hasMeaningfulOutside = this.isMeaningfulEditableText(bodyClone.textContent ?? "");
+          if (!hasMeaningfulOutside) {
+            html = (wrappers[0] as HTMLElement).outerHTML;
+          }
+        }
+      }
+    }
+
+    if (html.length === 0) {
+      return false;
+    }
+
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const rawWrapper = template.content.firstElementChild as HTMLElement | null;
+    if (!rawWrapper || !rawWrapper.classList.contains("re-form-control-wrap")) {
+      return false;
+    }
+
+    const wrapper = this.normalizePastedFormControlWrapper(rawWrapper);
+    if (!wrapper) {
+      this.debugLog("form control paste skipped: invalid wrapper payload");
+      return false;
+    }
+
+    this.restoreSelection(false);
+    const activeRange = this.getActiveEditorRange();
+    if (activeRange) {
+      this.insertNodeAtCaret(wrapper);
+    } else {
+      this.editor.appendChild(wrapper);
+    }
+
+    this.attachFormControlResizer(wrapper);
+    this.ensureFormControlPropsHistory(wrapper);
+    this.pushFormControlPropsHistory(wrapper);
+
+    event.preventDefault();
+    this.placeCaretAroundImageWrapper(wrapper, "after");
+    this.setActiveFormControlWrapper(wrapper);
+    this.setActiveImageWrapper(null);
+    this.setActiveTableElement(null);
+    this.clearSelectedCells();
+    this.updateToolbarState();
+    this.debouncedSave();
+    this.showSaveStatus("Form control pasted");
+    this.debugLog(`form control pasted kind=${wrapper.dataset.controlKind ?? "unknown"} id=${wrapper.dataset.controlId ?? "none"}`);
+    return true;
+  }
+
   private handleCopy(event: ClipboardEvent): void {
     if (!event.clipboardData) {
       this.debugLog("copy skipped: clipboardData unavailable");
+      return;
+    }
+
+    if (this.copyActiveFormControlToClipboard(event)) {
       return;
     }
 
@@ -6652,6 +7009,10 @@ export class RichEditor {
 
   private handleCut(event: ClipboardEvent): void {
     if (!event.clipboardData) {
+      return;
+    }
+
+    if (this.cutActiveFormControlToClipboard(event)) {
       return;
     }
 
@@ -6907,6 +7268,10 @@ export class RichEditor {
   // 붙여넣기 데이터를 정제 후 삽입한다.
   // HTML이 있으면 sanitize 후 insertHTML, 아니면 plain text 정규화 후 insertText.
   private handlePaste(event: ClipboardEvent): void {
+    if (this.pasteFormControlFromClipboard(event)) {
+      return;
+    }
+
     if (this.handleGridPaste(event)) {
       return;
     }
@@ -7772,6 +8137,58 @@ export class RichEditor {
     this.setActiveImageWrapper(near);
     const nearFormControl = this.getFormControlWrapperNearCollapsedCaret();
     this.setActiveFormControlWrapper(nearFormControl);
+  }
+
+  private clearRangeSelectionHighlights(): void {
+    for (const node of Array.from(this.editor.querySelectorAll(".re-selection-active")) as HTMLElement[]) {
+      node.classList.remove("re-selection-active");
+    }
+  }
+
+  private syncRangeSelectionHighlights(range: Range): void {
+    this.clearRangeSelectionHighlights();
+
+    const selectable = Array.from(
+      this.editor.querySelectorAll("table.re-table, .re-image-wrap, .re-form-control-wrap"),
+    ) as HTMLElement[];
+
+    for (const node of selectable) {
+      if (this.rangeIntersectsNode(range, node)) {
+        node.classList.add("re-selection-active");
+      }
+    }
+  }
+
+  private rangeIntersectsNode(range: Range, node: Node): boolean {
+    try {
+      return range.intersectsNode(node);
+    } catch {
+      return false;
+    }
+  }
+
+  // 선택 범위가 객체/테이블에 걸치면 시각적 활성 상태를 동기화한다.
+  // collapsed 범위는 기존 caret 근접 탐색 로직을 재사용한다.
+  private syncActiveObjectsWithSelection(range: Range): void {
+    if (range.collapsed) {
+      this.setRangeSelectionMode(false);
+      this.clearRangeSelectionHighlights();
+      this.syncActiveImageWithCaret();
+      const startElement = this.getRangeStartContainerElement(range);
+      const nearTable = startElement?.closest("table") as HTMLTableElement | null;
+      this.setActiveTableElement(nearTable && this.editor.contains(nearTable) ? nearTable : null);
+      return;
+    }
+
+    this.setRangeSelectionMode(true);
+    this.syncRangeSelectionHighlights(range);
+    this.setActiveImageWrapper(null);
+    this.setActiveFormControlWrapper(null);
+    this.setActiveTableElement(null);
+  }
+
+  private setRangeSelectionMode(active: boolean): void {
+    this.editor.classList.toggle("re-range-selecting", active);
   }
 
   private getFormControlWrapperNearCollapsedCaret(): HTMLElement | null {
@@ -9306,14 +9723,19 @@ export class RichEditor {
   }
 
   private updateColorPaletteSelection(textColor: string, backgroundColor: string): void {
+    const colorPalette = this.colorPalette;
+    if (!colorPalette) {
+      return;
+    }
+
     const normalizedText = this.normalizeColorToHex(textColor);
     const normalizedBg = this.normalizeColorToHex(backgroundColor);
     const isTransparentBg = !normalizedBg || backgroundColor === "transparent" || backgroundColor.includes("0)");
-    const mode = this.colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
+    const mode = colorPalette.dataset.mode === "hiliteColor" ? "hiliteColor" : "foreColor";
 
     this.refreshRecentColorSwatches();
 
-    for (const node of Array.from(this.colorPalette.querySelectorAll("button[data-color-value]"))) {
+    for (const node of Array.from(colorPalette.querySelectorAll("button[data-color-value]"))) {
       const button = node as HTMLButtonElement;
       const role = (button.dataset.colorRole as FormattingRole | undefined) ?? mode;
       const value = button.dataset.colorValue?.toLowerCase() ?? "";

@@ -1,4 +1,4 @@
-import type { CellAnchor, TableMatrix } from "../types";
+import type { CellAnchor, TableMatrix } from "../../types";
 
 /**
  * HTML 테이블을 좌표 기반 TableMatrix로 변환한다.
