@@ -114,6 +114,79 @@ export function handleTableSelectionKeydown(ctx: any, event: KeyboardEvent): boo
   const endElement = activeRange.endContainer instanceof HTMLElement
     ? activeRange.endContainer
     : activeRange.endContainer.parentElement;
+  const startCell = startElement?.closest("td,th") as HTMLTableCellElement | null;
+  const endCell = endElement?.closest("td,th") as HTMLTableCellElement | null;
+  const keyboardAnchor = (ctx.keyboardAnchorCell as HTMLTableCellElement | null);
+  const keyboardFocus = (ctx.keyboardFocusCell as HTMLTableCellElement | null);
+  const hasManagedCellSelection = (ctx.selectedCells?.size ?? 0) > 0
+    && Boolean(keyboardAnchor && keyboardAnchor.isConnected)
+    && Boolean(keyboardFocus && keyboardFocus.isConnected)
+    && keyboardAnchor?.closest("table") === keyboardFocus?.closest("table");
+
+  const isMeaningfulEditableText = (value: string): boolean => value.replace(/[\s\u00A0\u202F\u200B\u200C\u200D\u2060\uFEFF]/g, "").length > 0;
+  const isRangeAtCellBoundary = (
+    cell: HTMLTableCellElement,
+    range: Range,
+    boundary: "start" | "end",
+  ): boolean => {
+    const contentRange = ctx.getCellEditableContentRange(cell) as Range;
+    if (boundary === "start") {
+      const before = contentRange.cloneRange();
+      try {
+        before.setEnd(range.startContainer, range.startOffset);
+      } catch {
+        return false;
+      }
+      return !isMeaningfulEditableText(before.toString());
+    }
+
+    const after = contentRange.cloneRange();
+    try {
+      after.setStart(range.endContainer, range.endOffset);
+    } catch {
+      return false;
+    }
+    return !isMeaningfulEditableText(after.toString());
+  };
+
+  if (startCell && endCell && startCell === endCell && !hasManagedCellSelection) {
+    const cell = startCell;
+    if (selection.isCollapsed) {
+      const atStart = ctx.isCaretAtCellBoundary(cell, "start") as boolean;
+      const atEnd = ctx.isCaretAtCellBoundary(cell, "end") as boolean;
+      if ((key === "ArrowLeft" || key === "ArrowUp") && !atStart) {
+        if ((ctx.selectedCells?.size ?? 0) > 0) {
+          ctx.clearSelectedCells();
+        }
+        ctx.debugLog(`table selection native-pass key=${key} reason=inside-cell-not-at-start`);
+        return false;
+      }
+      if ((key === "ArrowRight" || key === "ArrowDown") && !atEnd) {
+        if ((ctx.selectedCells?.size ?? 0) > 0) {
+          ctx.clearSelectedCells();
+        }
+        ctx.debugLog(`table selection native-pass key=${key} reason=inside-cell-not-at-end`);
+        return false;
+      }
+    } else {
+      const touchesStart = isRangeAtCellBoundary(cell, activeRange, "start");
+      const touchesEnd = isRangeAtCellBoundary(cell, activeRange, "end");
+      if ((key === "ArrowLeft" || key === "ArrowUp") && !touchesStart) {
+        if ((ctx.selectedCells?.size ?? 0) > 0) {
+          ctx.clearSelectedCells();
+        }
+        ctx.debugLog(`table selection native-pass key=${key} reason=range-inside-cell`);
+        return false;
+      }
+      if ((key === "ArrowRight" || key === "ArrowDown") && !touchesEnd) {
+        if ((ctx.selectedCells?.size ?? 0) > 0) {
+          ctx.clearSelectedCells();
+        }
+        ctx.debugLog(`table selection native-pass key=${key} reason=range-inside-cell`);
+        return false;
+      }
+    }
+  }
 
   const startTable = startElement?.closest("table") as HTMLTableElement | null;
   const endTable = endElement?.closest("table") as HTMLTableElement | null;
@@ -127,7 +200,24 @@ export function handleTableSelectionKeydown(ctx: any, event: KeyboardEvent): boo
     return false;
   }
 
+  const activeTable = (ctx.activeTableElement && ctx.activeTableElement.isConnected)
+    ? (ctx.activeTableElement as HTMLTableElement)
+    : null;
+  if (activeTable && activeTable !== rangeTable) {
+    if ((ctx.selectedCells?.size ?? 0) > 0) {
+      const hasForeignSelected = Array.from(ctx.selectedCells as Set<HTMLTableCellElement>)
+        .some((cell) => cell.closest("table") !== rangeTable);
+      if (hasForeignSelected) {
+        ctx.clearSelectedCells();
+      }
+    }
+    ctx.setActiveTableElement?.(rangeTable);
+    ctx.debugLog(`table selection active-table-switch key=${key}`);
+  }
+
   const fallbackCandidates = [
+    startCell,
+    endCell,
     ctx.getSelectedCell() as HTMLTableCellElement | null,
     ctx.keyboardFocusCell as HTMLTableCellElement | null,
     ctx.keyboardAnchorCell as HTMLTableCellElement | null,

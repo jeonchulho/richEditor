@@ -539,12 +539,16 @@ body {
   background: rgba(186, 230, 253, 0.24);
 }
 
-.re-table.re-active ::selection,
-.re-table.re-selection-active ::selection,
 .re-image-wrap.re-active ::selection,
 .re-image-wrap.re-selection-active ::selection,
 .re-form-control-wrap.re-active ::selection,
 .re-form-control-wrap.re-selection-active ::selection {
+  background: transparent;
+  color: inherit;
+}
+
+.re-editor.re-range-selecting .re-table.re-active ::selection,
+.re-editor.re-range-selecting .re-table.re-selection-active ::selection {
   background: transparent;
   color: inherit;
 }
@@ -559,12 +563,16 @@ body {
   color: inherit !important;
 }
 
-.re-table.re-active ::-moz-selection,
-.re-table.re-selection-active ::-moz-selection,
 .re-image-wrap.re-active ::-moz-selection,
 .re-image-wrap.re-selection-active ::-moz-selection,
 .re-form-control-wrap.re-active ::-moz-selection,
 .re-form-control-wrap.re-selection-active ::-moz-selection {
+  background: transparent;
+  color: inherit;
+}
+
+.re-editor.re-range-selecting .re-table.re-active ::-moz-selection,
+.re-editor.re-range-selecting .re-table.re-selection-active ::-moz-selection {
   background: transparent;
   color: inherit;
 }

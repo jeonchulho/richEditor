@@ -252,7 +252,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("click", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     const button = target.closest("button[data-action]") as HTMLButtonElement | null;
     if (!button) {
       return;
@@ -358,7 +361,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("mousedown", (event: MouseEvent) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (target.closest('[data-role="colorPalette"]')) {
       // 색상 버튼 클릭 시 에디터 selection이 날아가지 않도록 기본 포커스 이동을 막는다.
       event.preventDefault();
@@ -366,7 +372,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("click", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     const paletteRoot = target.closest('[data-role="colorPalette"]') as HTMLDivElement | null;
     if (!paletteRoot) {
       return;
@@ -494,7 +503,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("mousedown", (event: MouseEvent) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (target.closest(".re-table-context-menu")) {
       event.preventDefault();
     }
@@ -680,7 +692,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("click", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (!target.closest(".re-table-context-menu")) {
       return;
     }
@@ -704,14 +719,20 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.root.addEventListener("mousedown", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (target.closest(".re-mention-popup")) {
       event.preventDefault();
     }
   });
 
   ctx.root.addEventListener("click", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (!target.closest(".re-mention-popup")) {
       return;
     }
@@ -746,6 +767,13 @@ export function bindRichEditorEvents(ctx: any): void {
     ctx.updateToolbarState();
   });
 
+  ctx.editor.addEventListener("beforeinput", () => {
+    if (ctx.isComposing) {
+      return;
+    }
+    ctx.markInputHistoryBoundary?.();
+  });
+
   ctx.editor.addEventListener("input", () => {
     if (ctx.isComposing) {
       ctx.captureSelection();
@@ -754,10 +782,8 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
-    const skipNormalize = ctx.consumeSkipNormalizeOnNextInput?.() as boolean | undefined;
-    if (!skipNormalize) {
-      ctx.normalizeTopLevelParagraphs?.();
-    }
+    ctx.consumeSkipNormalizeOnNextInput?.();
+  ctx.flushInputHistoryBoundary?.();
     ctx.debouncedSave();
     ctx.normalizeInlineCaretMarkerAtSelection?.();
     ctx.syncActiveImageWithCaret?.();
@@ -769,6 +795,7 @@ export function bindRichEditorEvents(ctx: any): void {
   ctx.editor.addEventListener("compositionstart", () => {
     ctx.isComposing = true;
     ctx.composingText = "";
+    ctx.startCompositionHistoryBoundary?.();
   });
 
   ctx.editor.addEventListener("compositionupdate", (event: CompositionEvent) => {
@@ -779,11 +806,15 @@ export function bindRichEditorEvents(ctx: any): void {
   ctx.editor.addEventListener("compositionend", () => {
     ctx.isComposing = false;
     ctx.composingText = "";
+    ctx.flushCompositionHistoryBoundary?.();
   });
 
   ctx.editor.addEventListener("click", (event: Event) => {
     const mouseEvent = event as MouseEvent;
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     ctx.hideTableContextMenu();
 
     const imageWrap = target.closest(".re-image-wrap") as HTMLElement | null;
@@ -830,7 +861,7 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
-    const cell = (event.target as HTMLElement).closest("td,th");
+    const cell = target.closest("td,th");
     if (!cell) {
       const table = target.closest("table");
       if (table) {
@@ -850,6 +881,24 @@ export function bindRichEditorEvents(ctx: any): void {
         ctx.resetTypingColorToDefault();
       }
       return;
+    }
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const startEl = asElement(range.startContainer);
+      const endEl = asElement(range.endContainer);
+      const startCell = startEl?.closest("td,th") as HTMLTableCellElement | null;
+      const endCell = endEl?.closest("td,th") as HTMLTableCellElement | null;
+      if (startCell && endCell && startCell === endCell) {
+        ctx.clearSelectedCells();
+        ctx.keyboardAnchorCell = startCell;
+        ctx.keyboardFocusCell = startCell;
+        ctx.lastTableAnchorCell = startCell;
+        ctx.setActiveTableElement(startCell.closest("table") as HTMLTableElement | null);
+        ctx.debugLog(`cell click keep-text-selection cell=${ctx.describeCell(startCell)} range=${ctx.describeRange(range)}`);
+        return;
+      }
     }
 
     // 클릭 조합 규칙:
@@ -879,9 +928,78 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.editor.addEventListener("dblclick", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     const formControlWrap = target.closest(".re-form-control-wrap") as HTMLElement | null;
     if (!formControlWrap) {
+      const cell = target.closest("td,th") as HTMLTableCellElement | null;
+      if (!cell) {
+        return;
+      }
+
+      const text = (cell.textContent ?? "").replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, "").trim();
+      if (text.length === 0) {
+        return;
+      }
+
+      ctx.clearSelectedCells?.();
+      ctx.keyboardAnchorCell = cell;
+      ctx.keyboardFocusCell = cell;
+      ctx.lastTableAnchorCell = cell;
+      ctx.setActiveTableElement?.(cell.closest("table") as HTMLTableElement | null);
+
+      const applyWordSelectionFallback = (): void => {
+        const selection = window.getSelection();
+        if (!selection) {
+          return;
+        }
+
+        if (selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const startElement = asElement(range.startContainer);
+          const endElement = asElement(range.endContainer);
+          const startCell = startElement?.closest("td,th") as HTMLTableCellElement | null;
+          const endCell = endElement?.closest("td,th") as HTMLTableCellElement | null;
+          const selectedText = selection.toString().trim();
+          if (startCell === cell && endCell === cell && selectedText.length > 0) {
+            ctx.captureSelection?.();
+            ctx.updateToolbarState?.();
+            return;
+          }
+        }
+
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        let fallbackRange: Range | null = null;
+        while (walker.nextNode()) {
+          const textNode = walker.currentNode as Text;
+          const raw = textNode.textContent ?? "";
+          const match = /[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3131-\uD79D]+/.exec(raw);
+          if (!match || match.index === undefined) {
+            continue;
+          }
+
+          fallbackRange = document.createRange();
+          fallbackRange.setStart(textNode, match.index);
+          fallbackRange.setEnd(textNode, match.index + match[0].length);
+          break;
+        }
+
+        const range = fallbackRange ?? document.createRange();
+        if (!fallbackRange) {
+          range.selectNodeContents(cell);
+        }
+        selection.removeAllRanges();
+        selection.addRange(range);
+        ctx.captureSelection?.();
+        ctx.updateToolbarState?.();
+      };
+
+      // native dblclick 단어 선택 결과를 우선 사용하고,
+      // 선택이 비정상(빈 값/셀 바깥)일 때만 셀 내부 단어 선택으로 복구한다.
+      applyWordSelectionFallback();
+      setTimeout(applyWordSelectionFallback, 0);
       return;
     }
 
@@ -892,7 +1010,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.editor.addEventListener("contextmenu", (event: Event) => {
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (target.closest(".re-col-handle") || target.closest(".re-row-handle") || target.closest(".re-image-handle")) {
       return;
     }
@@ -927,7 +1048,10 @@ export function bindRichEditorEvents(ctx: any): void {
       ctx.endToolbarInteraction?.();
     }
 
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     if (target.closest(".re-col-handle") || target.closest(".re-row-handle") || target.closest(".re-image-handle")) {
       return;
     }
@@ -948,6 +1072,9 @@ export function bindRichEditorEvents(ctx: any): void {
     if (!(event as MouseEvent).shiftKey) {
       // 기본 드래그는 같은 셀 안에서 브라우저 텍스트 선택을 그대로 허용한다.
       // 다른 셀로 진입하는 순간 mousemove에서 셀 선택 모드로 승격한다.
+      if ((ctx.selectedCells?.size ?? 0) > 0) {
+        ctx.clearSelectedCells();
+      }
       ctx.isCellDragSelecting = false;
       ctx.dragAnchorCell = cell;
       ctx.lastTableAnchorCell = cell;
@@ -975,17 +1102,33 @@ export function bindRichEditorEvents(ctx: any): void {
       return;
     }
 
-    const target = event.target as HTMLElement;
+    const target = asElement(event.target);
+    if (!target) {
+      return;
+    }
     const cell = target.closest("td,th") as HTMLTableCellElement | null;
     if (!cell) {
       return;
     }
 
     if (!ctx.isCellDragSelecting && cell !== ctx.dragAnchorCell) {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const startElement = asElement(range.startContainer);
+        const endElement = asElement(range.endContainer);
+        const startCell = startElement?.closest("td,th") as HTMLTableCellElement | null;
+        const endCell = endElement?.closest("td,th") as HTMLTableCellElement | null;
+
+        if (startCell && endCell && startCell === ctx.dragAnchorCell && endCell === ctx.dragAnchorCell) {
+          ctx.debugLog(`cell drag keep text-mode anchor=${ctx.describeCell(ctx.dragAnchorCell)} reason=range-inside-anchor`);
+          return;
+        }
+      }
+
       // 같은 셀을 벗어나면 텍스트 선택 모드에서 셀 범위 선택 모드로 전환한다.
       ctx.isCellDragSelecting = true;
       ctx.didDragSelectCells = true;
-      const selection = window.getSelection();
       selection?.removeAllRanges();
 
       ctx.clearSelectedCells();

@@ -95,6 +95,14 @@ const DEFAULT_MENTION_TRIGGER = "@";
 const DEFAULT_MENTION_MAX_RESULTS = 8;
 const FORM_CONTROL_CLIPBOARD_MIME = "application/x-rich-editor-form-control";
 
+type UndoSelectionOffsets = { start: number; end: number };
+type MergeSnapshot = {
+  beforeHtml: string;
+  afterHtml: string;
+  beforeSelection: UndoSelectionOffsets | null;
+  afterSelection: UndoSelectionOffsets | null;
+};
+
 // RichEditor 핵심 클래스.
 // 책임 범위:
 // 1) 렌더링/DOM 참조 연결
@@ -243,6 +251,7 @@ export class RichEditor {
   private tablePropsSessionCell: HTMLTableCellElement | null = null;
   private tablePropsSessionCells: HTMLTableCellElement[] = [];
   private tablePropsSessionCol = -1;
+  private tablePropsSessionBeforeHtml: string | null = null;
   private readonly tablePropsSnapshot = new Map<HTMLElement, string | null>();
   private readonly tablePropsInitialFieldValues = new Map<string, string>();
   private readonly recentTablePropColors: string[] = [];
@@ -272,13 +281,17 @@ export class RichEditor {
   private isRestoringSelection = false;
   private isToolbarInteracting = false;
   private skipNormalizeOnNextInput = false;
+  private pendingInputHistoryBeforeHtml: string | null = null;
+  private pendingInputHistoryBeforeSelection: UndoSelectionOffsets | null = null;
+  private compositionHistoryBeforeHtml: string | null = null;
+  private compositionHistoryBeforeSelection: UndoSelectionOffsets | null = null;
   private pendingEnterAfterFormControlExit = false;
   private debugSeq = 0;
   private readonly debouncedSave: () => void;
   private readonly selectedCells = new Set<HTMLTableCellElement>();
   private readonly previewCells = new Set<HTMLTableCellElement>();
-  private readonly mergeUndoSnapshots: string[] = [];
-  private readonly mergeRedoSnapshots: string[] = [];
+  private readonly mergeUndoSnapshots: MergeSnapshot[] = [];
+  private readonly mergeRedoSnapshots: MergeSnapshot[] = [];
   private isCellDragSelecting = false;
   private didDragSelectCells = false;
   private dragAnchorCell: HTMLTableCellElement | null = null;
@@ -1006,6 +1019,7 @@ export class RichEditor {
     this.tablePropsSessionCell = null;
     this.tablePropsSessionCells = [];
     this.tablePropsSessionCol = -1;
+    this.tablePropsSessionBeforeHtml = null;
     this.tablePropsSnapshot.clear();
     this.tablePropsInitialFieldValues.clear();
   }
@@ -1385,6 +1399,7 @@ export class RichEditor {
     cells: HTMLTableCellElement[] = [],
   ): void {
     this.clearTablePropsSession();
+    this.tablePropsSessionBeforeHtml = this.editor.innerHTML;
     this.tablePropsSessionTable = table;
     this.tablePropsSessionRow = row ?? this.getSelectedCell()?.parentElement as HTMLTableRowElement | null;
     this.tablePropsSessionCell = cell ?? this.getSelectedCell();
@@ -1415,15 +1430,8 @@ export class RichEditor {
   }
 
   private exec(command: string, value?: string): void {
-    if ((command === "undo" || command === "redo") && this.applyFormControlPropsHistory(command, false)) {
-      return;
-    }
-
-    if (command === "undo" && this.applyMergeUndoSnapshot()) {
-      return;
-    }
-
-    if (command === "redo" && this.applyMergeRedoSnapshot()) {
+    if (command === "undo" || command === "redo") {
+      this.runUndoRedo(command);
       return;
     }
 
@@ -1435,20 +1443,169 @@ export class RichEditor {
     this.updateToolbarState();
   }
 
-  private pushMergeUndoSnapshot(beforeHtml: string): void {
+  private runUndoRedo(command: "undo" | "redo"): boolean {
+    if (this.applyFormControlPropsHistory(command, false)) {
+      return true;
+    }
+
+    if (command === "undo" && this.shouldApplyMergeUndoBeforeNative() && this.applyMergeUndoSnapshot()) {
+      return true;
+    }
+
+    if (command === "redo" && this.shouldApplyMergeRedoBeforeNative() && this.applyMergeRedoSnapshot()) {
+      return true;
+    }
+
+    if (command === "undo" && this.applyMergeUndoSnapshot()) {
+      return true;
+    }
+
+    if (command === "redo" && this.applyMergeRedoSnapshot()) {
+      return true;
+    }
+
+    return false;
+  }
+
+  public markInputHistoryBoundary(): void {
+    if (this.isComposing || this.pendingInputHistoryBeforeHtml !== null) {
+      return;
+    }
+
+    this.pendingInputHistoryBeforeHtml = this.editor.innerHTML;
+    this.pendingInputHistoryBeforeSelection = this.captureSelectionTextOffsets();
+  }
+
+  public flushInputHistoryBoundary(): void {
+    const beforeHtml = this.pendingInputHistoryBeforeHtml;
+    const beforeSelection = this.pendingInputHistoryBeforeSelection;
+    this.pendingInputHistoryBeforeHtml = null;
+    this.pendingInputHistoryBeforeSelection = null;
+    if (beforeHtml === null) {
+      return;
+    }
+
+    this.pushMergeUndoSnapshot(beforeHtml, beforeSelection);
+  }
+
+  public startCompositionHistoryBoundary(): void {
+    if (this.compositionHistoryBeforeHtml !== null) {
+      return;
+    }
+
+    this.compositionHistoryBeforeHtml = this.editor.innerHTML;
+    this.compositionHistoryBeforeSelection = this.captureSelectionTextOffsets();
+  }
+
+  public flushCompositionHistoryBoundary(): void {
+    const beforeHtml = this.compositionHistoryBeforeHtml;
+    const beforeSelection = this.compositionHistoryBeforeSelection;
+    this.compositionHistoryBeforeHtml = null;
+    this.compositionHistoryBeforeSelection = null;
+    if (beforeHtml === null) {
+      return;
+    }
+
+    this.pushMergeUndoSnapshot(beforeHtml, beforeSelection);
+  }
+
+  private tryNativeUndoRedo(command: "undo" | "redo"): boolean {
+    const execCommand = (document as unknown as { execCommand?: (commandId: string, showUI?: boolean, value?: string) => boolean }).execCommand;
+    if (typeof execCommand !== "function") {
+      return false;
+    }
+
+    this.focusEditor();
+    const beforeHtml = this.editor.innerHTML;
+    const applied = execCommand.call(document, command, false);
+    const changed = beforeHtml !== this.editor.innerHTML;
+
+    this.captureSelection();
+    this.updateToolbarState();
+
+    if (applied || changed) {
+      this.debouncedSave();
+      return true;
+    }
+
+    return false;
+  }
+
+  private shouldApplyMergeUndoBeforeNative(): boolean {
+    const top = this.mergeUndoSnapshots[this.mergeUndoSnapshots.length - 1];
+    if (!top) {
+      return false;
+    }
+
+    return this.isHtmlBoundaryEquivalent(this.editor.innerHTML, top.afterHtml);
+  }
+
+  private shouldApplyMergeRedoBeforeNative(): boolean {
+    const top = this.mergeRedoSnapshots[this.mergeRedoSnapshots.length - 1];
+    if (!top) {
+      return false;
+    }
+
+    return this.isHtmlBoundaryEquivalent(this.editor.innerHTML, top.beforeHtml);
+  }
+
+  private isHtmlBoundaryEquivalent(currentHtml: string, targetHtml: string): boolean {
+    return this.canonicalizeUndoBoundaryHtml(currentHtml) === this.canonicalizeUndoBoundaryHtml(targetHtml);
+  }
+
+  private canonicalizeUndoBoundaryHtml(html: string): string {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    // 동적으로 붙는 핸들/마커/선택 하이라이트는 undo 경계 판정에서 제외한다.
+    for (const node of Array.from(doc.body.querySelectorAll(
+      ".re-col-handle, .re-table-corner-handle, [data-re-caret-marker], .re-selection-active",
+    ))) {
+      node.remove();
+    }
+
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const emptyTexts: Text[] = [];
+    while (walker.nextNode()) {
+      const text = walker.currentNode as Text;
+      text.textContent = (text.textContent ?? "").replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
+      if ((text.textContent ?? "").length === 0) {
+        emptyTexts.push(text);
+      }
+    }
+    for (const text of emptyTexts) {
+      text.remove();
+    }
+
+    for (const p of Array.from(doc.body.querySelectorAll("p")) as HTMLParagraphElement[]) {
+      const meaningful = this.isMeaningfulEditableText(p.textContent ?? "");
+      const hasSpecialNode = Boolean(p.querySelector("img,table,.re-image-wrap"));
+      if (!meaningful && !hasSpecialNode) {
+        p.innerHTML = "<br>";
+      }
+    }
+
+    return doc.body.innerHTML;
+  }
+
+  private pushMergeUndoSnapshot(beforeHtml: string, beforeSelection: UndoSelectionOffsets | null = this.captureSelectionTextOffsets()): void {
     const afterHtml = this.editor.innerHTML;
     if (beforeHtml === afterHtml) {
       return;
     }
 
-    this.mergeUndoSnapshots.push(beforeHtml);
+    this.mergeUndoSnapshots.push({
+      beforeHtml,
+      afterHtml,
+      beforeSelection,
+      afterSelection: this.captureSelectionTextOffsets(),
+    });
     if (this.mergeUndoSnapshots.length > 50) {
       this.mergeUndoSnapshots.shift();
     }
     this.mergeRedoSnapshots.length = 0;
   }
 
-  private restoreEditorFromMergeSnapshot(html: string): void {
+  private restoreEditorFromMergeSnapshot(html: string, selectionOffsets: UndoSelectionOffsets | null): void {
     this.editor.innerHTML = html;
 
     const tables = Array.from(this.editor.querySelectorAll("table.re-table")) as HTMLTableElement[];
@@ -1461,6 +1618,7 @@ export class RichEditor {
     this.keyboardFocusCell = null;
     this.lastTableAnchorCell = null;
     this.setActiveTableElement(null);
+    this.restoreSelectionFromTextOffsets(selectionOffsets);
     this.captureSelection();
     this.updateToolbarState();
     this.debouncedSave();
@@ -1472,8 +1630,8 @@ export class RichEditor {
       return false;
     }
 
-    this.mergeRedoSnapshots.push(this.editor.innerHTML);
-    this.restoreEditorFromMergeSnapshot(snapshot);
+    this.mergeRedoSnapshots.push(snapshot);
+    this.restoreEditorFromMergeSnapshot(snapshot.beforeHtml, snapshot.beforeSelection);
     this.showSaveStatus("Merge undo applied");
     return true;
   }
@@ -1484,8 +1642,8 @@ export class RichEditor {
       return false;
     }
 
-    this.mergeUndoSnapshots.push(this.editor.innerHTML);
-    this.restoreEditorFromMergeSnapshot(snapshot);
+    this.mergeUndoSnapshots.push(snapshot);
+    this.restoreEditorFromMergeSnapshot(snapshot.afterHtml, snapshot.afterSelection);
     this.showSaveStatus("Merge redo applied");
     return true;
   }
@@ -1494,6 +1652,84 @@ export class RichEditor {
     if (document.activeElement !== this.editor) {
       this.editor.focus();
     }
+  }
+
+  private captureSelectionTextOffsets(): UndoSelectionOffsets | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!this.editor.contains(range.commonAncestorContainer)) {
+      return null;
+    }
+
+    const start = this.getTextOffsetWithinEditor(range.startContainer, range.startOffset);
+    const end = this.getTextOffsetWithinEditor(range.endContainer, range.endOffset);
+    if (start === null || end === null) {
+      return null;
+    }
+
+    return { start, end };
+  }
+
+  private getTextOffsetWithinEditor(node: Node, offset: number): number | null {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(this.editor);
+      range.setEnd(node, offset);
+      return range.toString().length;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveUndoTextPosition(offset: number): { node: Node; offset: number } | null {
+    const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT);
+
+    let consumed = 0;
+    let lastTextNode: Text | null = null;
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode as Text;
+      const length = textNode.data.length;
+      lastTextNode = textNode;
+      if (offset <= consumed + length) {
+        return { node: textNode, offset: Math.max(0, offset - consumed) };
+      }
+      consumed += length;
+    }
+
+    if (lastTextNode) {
+      return { node: lastTextNode, offset: lastTextNode.data.length };
+    }
+
+    const childCount = this.editor.childNodes.length;
+    const fallbackOffset = offset <= 0 ? 0 : childCount;
+    return { node: this.editor, offset: fallbackOffset };
+  }
+
+  private restoreSelectionFromTextOffsets(offsets: UndoSelectionOffsets | null): void {
+    if (!offsets) {
+      return;
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      return;
+    }
+
+    const start = this.resolveUndoTextPosition(offsets.start);
+    const end = this.resolveUndoTextPosition(offsets.end);
+    if (!start || !end) {
+      return;
+    }
+
+    const nextRange = document.createRange();
+    nextRange.setStart(start.node, start.offset);
+    nextRange.setEnd(end.node, end.offset);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
   }
 
   // 현재 selection을 저장한다.
@@ -2602,7 +2838,7 @@ export class RichEditor {
       return;
     }
 
-    const beforeHtml = this.editor.innerHTML;
+    const beforeHtml = this.tablePropsSessionBeforeHtml ?? this.editor.innerHTML;
     const applied = this.applyTablePropsFromDialog(false);
     if (!applied) {
       this.showSaveStatus("Table properties: no active target");
@@ -3118,6 +3354,29 @@ export class RichEditor {
   private syncSelectedCellsWithCaret(): void {
     if (this.selectedCells.size === 0) {
       return;
+    }
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (this.editor.contains(range.commonAncestorContainer)) {
+        const resolveCell = (node: Node): HTMLTableCellElement | null => {
+          const element = node instanceof HTMLElement ? node : node.parentElement;
+          return (element?.closest("td,th") as HTMLTableCellElement | null) ?? null;
+        };
+
+        const startCell = resolveCell(range.startContainer);
+        const endCell = resolveCell(range.endContainer);
+        if (startCell && endCell && startCell === endCell) {
+          if (this.selectedCells.size > 0) {
+            this.clearSelectedCells();
+          }
+          this.keyboardAnchorCell = startCell;
+          this.keyboardFocusCell = startCell;
+          this.lastTableAnchorCell = startCell;
+          return;
+        }
+      }
     }
 
     const activeCell = this.getSelectedCell();
@@ -4566,6 +4825,7 @@ export class RichEditor {
   }
 
   private async insertImageFromFile(file: File): Promise<void> {
+    const beforeHtml = this.editor.innerHTML;
     const dataUrl = await this.fileToDataUrl(file);
     const wrapper = document.createElement("span");
     wrapper.className = "re-image-wrap";
@@ -4583,6 +4843,7 @@ export class RichEditor {
     this.setActiveImageWrapper(wrapper);
     this.placeCaretAroundImageWrapper(wrapper, "after");
     this.setActiveImageWrapper(null);
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
   }
 
@@ -5616,11 +5877,11 @@ export class RichEditor {
     }
 
     const wasDialogBoundToTarget = !this.formControlPropsDialog.hidden && this.formControlPropsTarget === wrapper;
-    history.index = nextIndex;
     const replaced = this.replaceFormControlFromHtml(wrapper, history.states[nextIndex]);
     if (!replaced) {
       return false;
     }
+    history.index = nextIndex;
 
     if (this.formControlPropsTarget === wrapper) {
       this.formControlPropsTarget = replaced;
@@ -5649,6 +5910,7 @@ export class RichEditor {
 
       handle.addEventListener("mousedown", (event) => {
         event.preventDefault();
+        const beforeHtml = this.editor.innerHTML;
         const rect = img.getBoundingClientRect();
         const ratio = rect.width / rect.height;
         const startX = event.clientX;
@@ -5665,6 +5927,7 @@ export class RichEditor {
         const onUp = (): void => {
           window.removeEventListener("mousemove", onMove);
           window.removeEventListener("mouseup", onUp);
+          this.pushMergeUndoSnapshot(beforeHtml);
           this.debouncedSave();
         };
 
@@ -8200,11 +8463,30 @@ export class RichEditor {
       return;
     }
 
+    const resolveCell = (node: Node): HTMLTableCellElement | null => {
+      const element = node instanceof HTMLElement ? node : node.parentElement;
+      return (element?.closest("td,th") as HTMLTableCellElement | null) ?? null;
+    };
+
+    const startCell = resolveCell(range.startContainer);
+    const endCell = resolveCell(range.endContainer);
+    if (startCell && endCell && startCell === endCell) {
+      this.setRangeSelectionMode(false);
+      this.setCaretCollapsedMode(false);
+      this.clearRangeSelectionHighlights();
+      this.setActiveImageWrapper(null);
+      this.setActiveFormControlWrapper(null);
+      const table = startCell.closest("table") as HTMLTableElement | null;
+      this.setActiveTableElement(table && this.editor.contains(table) ? table : null);
+      return;
+    }
+
     this.setRangeSelectionMode(true);
     this.setCaretCollapsedMode(false);
     this.syncRangeSelectionHighlights(range);
     this.setActiveImageWrapper(null);
     this.setActiveFormControlWrapper(null);
+
     this.setActiveTableElement(null);
   }
 
@@ -8465,6 +8747,130 @@ export class RichEditor {
   // div/span/text 직계 노드는 p로 정규화하고, 불필요한 래퍼는 펼쳐 중첩 p 구조를 줄인다.
   private normalizeTopLevelParagraphs(): void {
     if (this.isComposing) {
+      return;
+    }
+
+    const hasNormalizationWork = (): boolean => {
+      if (!this.editor.firstChild) {
+        return true;
+      }
+
+      const isTableWrapper = (node: HTMLElement): boolean => {
+        return node.tagName.toLowerCase() === "div"
+          && node.classList.contains("re-table-wrap")
+          && Boolean(node.querySelector(":scope > table.re-table"));
+      };
+
+      const isTableBlockElement = (node: Element | null): boolean => {
+        if (!(node instanceof HTMLElement)) {
+          return false;
+        }
+
+        if (node.tagName.toLowerCase() === "table") {
+          return true;
+        }
+
+        return isTableWrapper(node);
+      };
+
+      const tableNeedsStructureNormalization = (table: HTMLTableElement): boolean => {
+        if (table.querySelector(":scope > p, :scope > div:not(.re-table-corner-handle), :scope > span, :scope > br")) {
+          return true;
+        }
+        if (table.querySelector("colgroup > :not(col), thead > :not(tr), tbody > :not(tr), tfoot > :not(tr), tr > :not(td):not(th)")) {
+          return true;
+        }
+
+        return false;
+      };
+
+      const isVisuallyEmptyParagraph = (p: HTMLParagraphElement): boolean => {
+        const meaningful = this.isMeaningfulEditableText(p.textContent ?? "");
+        const hasSpecialNode = Boolean(p.querySelector("img,table,.re-image-wrap"));
+        return !meaningful && !hasSpecialNode;
+      };
+
+      const isParagraphHostTag = (tag: string): boolean => /^(p|div|span)$/.test(tag);
+      const isPreservedTopLevelTag = (tag: string): boolean => /^(p|table|ul|ol|blockquote|pre|h1|h2|h3|h4|h5|h6)$/.test(tag);
+
+      for (const node of Array.from(this.editor.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const textNode = node as Text;
+          if (this.isMeaningfulEditableText(textNode.textContent ?? "")) {
+            return true;
+          }
+          continue;
+        }
+
+        if (!(node instanceof HTMLElement)) {
+          return true;
+        }
+
+        if (node.classList.contains("re-image-wrap")) {
+          continue;
+        }
+
+        const tag = node.tagName.toLowerCase();
+        if (tag === "br") {
+          return true;
+        }
+
+        if (tag === "p") {
+          if (node.querySelector("table") || node.querySelector(".re-table-wrap")) {
+            return true;
+          }
+          continue;
+        }
+
+        if (tag === "table") {
+          if (tableNeedsStructureNormalization(node as HTMLTableElement)) {
+            return true;
+          }
+          continue;
+        }
+
+        if (isTableWrapper(node)) {
+          const wrappedTable = node.querySelector(":scope > table.re-table") as HTMLTableElement | null;
+          if (wrappedTable && tableNeedsStructureNormalization(wrappedTable)) {
+            return true;
+          }
+          continue;
+        }
+
+        if (isPreservedTopLevelTag(tag)) {
+          continue;
+        }
+
+        const hasStructuralChild = Array.from(node.children).some((child) => {
+          const childTag = child.tagName.toLowerCase();
+          return isPreservedTopLevelTag(childTag) || isParagraphHostTag(childTag) || child.classList.contains("re-image-wrap");
+        });
+
+        if (hasStructuralChild || !isParagraphHostTag(tag)) {
+          return true;
+        }
+      }
+
+      for (const p of Array.from(this.editor.querySelectorAll(":scope > p")) as HTMLParagraphElement[]) {
+        if (!isVisuallyEmptyParagraph(p)) {
+          continue;
+        }
+
+        const prev = p.previousElementSibling as HTMLElement | null;
+        const next = p.nextElementSibling as HTMLElement | null;
+        const nearTable = isTableBlockElement(prev) || isTableBlockElement(next);
+        const prevIsEmptyParagraph = prev?.tagName.toLowerCase() === "p"
+          && isVisuallyEmptyParagraph(prev as HTMLParagraphElement);
+
+        if (nearTable || prevIsEmptyParagraph) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    if (!hasNormalizationWork()) {
       return;
     }
 
@@ -8804,6 +9210,11 @@ export class RichEditor {
       return;
     }
 
+    // IME 조합 중에는 브라우저 기본 동작을 건드리지 않는다.
+    if (this.isComposing) {
+      return;
+    }
+
     const key = event.key.toLowerCase();
     if (key === "s") {
       event.preventDefault();
@@ -8813,13 +9224,13 @@ export class RichEditor {
 
     if (key === "z" && !event.shiftKey) {
       event.preventDefault();
-      this.exec("undo");
+      this.runUndoRedo("undo");
       return;
     }
 
     if ((key === "y") || (key === "z" && event.shiftKey)) {
       event.preventDefault();
-      this.exec("redo");
+      this.runUndoRedo("redo");
     }
   }
 
@@ -9291,6 +9702,7 @@ export class RichEditor {
   }
 
   private deleteSpecificImage(wrapper: HTMLElement, source: "outside-image-boundary" | "active-image"): void {
+    const beforeHtml = this.editor.innerHTML;
     const placeholder = document.createElement("p");
     placeholder.innerHTML = "<br>";
     wrapper.insertAdjacentElement("afterend", placeholder);
@@ -9311,6 +9723,7 @@ export class RichEditor {
     this.updateToolbarState();
     this.debugLog(`image deleted source=${source}`);
     this.showSaveStatus(DELETE_UI_TEXT.imageDeleted);
+    this.pushMergeUndoSnapshot(beforeHtml);
     this.debouncedSave();
   }
 
