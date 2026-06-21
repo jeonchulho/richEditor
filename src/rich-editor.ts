@@ -8172,8 +8172,28 @@ export class RichEditor {
   private syncActiveObjectsWithSelection(range: Range): void {
     if (range.collapsed) {
       this.setRangeSelectionMode(false);
+      this.setCaretCollapsedMode(true);
       this.clearRangeSelectionHighlights();
       this.syncActiveImageWithCaret();
+
+      const selectedCell = this.getSelectedCell();
+      const tableFromCell = selectedCell?.closest("table") as HTMLTableElement | null;
+      if (tableFromCell && this.editor.contains(tableFromCell)) {
+        this.setActiveTableElement(tableFromCell);
+        return;
+      }
+
+      const focusCell = this.keyboardFocusCell && this.keyboardFocusCell.isConnected
+        ? this.keyboardFocusCell
+        : this.keyboardAnchorCell && this.keyboardAnchorCell.isConnected
+          ? this.keyboardAnchorCell
+          : null;
+      const tableFromFocusCell = focusCell?.closest("table") as HTMLTableElement | null;
+      if (tableFromFocusCell && this.editor.contains(tableFromFocusCell)) {
+        this.setActiveTableElement(tableFromFocusCell);
+        return;
+      }
+
       const startElement = this.getRangeStartContainerElement(range);
       const nearTable = startElement?.closest("table") as HTMLTableElement | null;
       this.setActiveTableElement(nearTable && this.editor.contains(nearTable) ? nearTable : null);
@@ -8181,6 +8201,7 @@ export class RichEditor {
     }
 
     this.setRangeSelectionMode(true);
+    this.setCaretCollapsedMode(false);
     this.syncRangeSelectionHighlights(range);
     this.setActiveImageWrapper(null);
     this.setActiveFormControlWrapper(null);
@@ -8189,6 +8210,10 @@ export class RichEditor {
 
   private setRangeSelectionMode(active: boolean): void {
     this.editor.classList.toggle("re-range-selecting", active);
+  }
+
+  private setCaretCollapsedMode(active: boolean): void {
+    this.editor.classList.toggle("re-caret-collapsed", active);
   }
 
   private getFormControlWrapperNearCollapsedCaret(): HTMLElement | null {
@@ -8563,6 +8588,10 @@ export class RichEditor {
       const moveInvalidChildren = (parent: Node, allowedTags: Set<string>): void => {
         for (const child of Array.from(parent.childNodes)) {
           if (child instanceof HTMLElement) {
+            if (child.classList.contains("re-table-corner-handle")) {
+              continue;
+            }
+
             const tag = child.tagName.toLowerCase();
             if (!allowedTags.has(tag)) {
               moveOutside(child);
@@ -9184,6 +9213,12 @@ export class RichEditor {
     this.activeTableElement = next && next.isConnected ? next : null;
 
     if (this.activeTableElement) {
+      const hasColHandle = Boolean(this.activeTableElement.querySelector(".re-col-handle"));
+      const hasRowHandle = Boolean(this.activeTableElement.querySelector(".re-row-handle"));
+      const cornerHandleCount = this.activeTableElement.querySelectorAll(".re-table-corner-handle").length;
+      if (!hasColHandle || !hasRowHandle || cornerHandleCount < 4) {
+        this.enableTableColumnResize(this.activeTableElement);
+      }
       this.activeTableElement.classList.add("re-active");
     }
   }

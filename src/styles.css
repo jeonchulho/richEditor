@@ -895,7 +895,7 @@ body {
 }
 
 .re-table:hover .re-table-corner-handle,
-.re-table.re-active .re-table-corner-handle {
+.re-editor.re-caret-collapsed .re-table.re-active .re-table-corner-handle {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1084,8 +1084,8 @@ body {
 
 .re-table:hover .re-col-handle,
 .re-table:hover .re-row-handle,
-.re-table.re-active .re-col-handle,
-.re-table.re-active .re-row-handle {
+.re-editor.re-caret-collapsed .re-table.re-active .re-col-handle,
+.re-editor.re-caret-collapsed .re-table.re-active .re-row-handle {
   opacity: 1;
   pointer-events: auto;
 }

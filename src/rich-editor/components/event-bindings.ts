@@ -922,6 +922,10 @@ export function bindRichEditorEvents(ctx: any): void {
   });
 
   ctx.editor.addEventListener("mousedown", (event: Event) => {
+    if (ctx.isToolbarInteracting) {
+      ctx.endToolbarInteraction?.();
+    }
+
     const target = event.target as HTMLElement;
     if (target.closest(".re-col-handle") || target.closest(".re-row-handle") || target.closest(".re-image-handle")) {
       return;
@@ -935,6 +939,8 @@ export function bindRichEditorEvents(ctx: any): void {
       ctx.dragAnchorCell = null;
       return;
     }
+
+    ctx.setActiveTableElement(cell.closest("table") as HTMLTableElement | null);
 
     ctx.didDragSelectCells = false;
 
@@ -1216,19 +1222,27 @@ export function bindRichEditorEvents(ctx: any): void {
       ctx.updateMentionAutocompleteFromSelection?.(ctx.composingText);
       return;
     }
-    if (ctx.isToolbarInteracting) {
-      return;
-    }
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
       ctx.setRangeSelectionMode?.(false);
+      ctx.setCaretCollapsedMode?.(false);
       ctx.clearRangeSelectionHighlights?.();
       return;
     }
 
     const range = selection.getRangeAt(0);
+    if (ctx.isToolbarInteracting) {
+      // 툴바 상호작용 플래그가 남아 있어도 caret이 에디터로 돌아온 시점엔 즉시 해제한다.
+      // 그렇지 않으면 selectionchange가 계속 무시되어 active/handle 상태가 갱신되지 않는다.
+      if (!ctx.editor.contains(range.commonAncestorContainer)) {
+        return;
+      }
+      ctx.endToolbarInteraction?.();
+    }
+
     if (!ctx.editor.contains(range.commonAncestorContainer)) {
       ctx.setRangeSelectionMode?.(false);
+      ctx.setCaretCollapsedMode?.(false);
       ctx.clearRangeSelectionHighlights?.();
       return;
     }
