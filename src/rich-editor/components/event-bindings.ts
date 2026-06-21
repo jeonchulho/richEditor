@@ -181,7 +181,8 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (action === "insertCheckbox") {
       event.stopPropagation();
-      ctx.restoreSelection();
+      // 폼 컨트롤 삽입은 현재 caret 위치를 우선해야 하므로 expanded fallback을 끈다.
+      ctx.restoreSelection(false);
       ctx.insertCheckboxControl?.();
       ctx.updateToolbarState();
       return;
@@ -189,7 +190,7 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (action === "insertRadio") {
       event.stopPropagation();
-      ctx.restoreSelection();
+      ctx.restoreSelection(false);
       ctx.insertRadioControl?.();
       ctx.updateToolbarState();
       return;
@@ -197,7 +198,7 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (action === "insertInput") {
       event.stopPropagation();
-      ctx.restoreSelection();
+      ctx.restoreSelection(false);
       ctx.insertInputControl?.();
       ctx.updateToolbarState();
       return;
@@ -205,7 +206,7 @@ export function bindRichEditorEvents(ctx: any): void {
 
     if (action === "insertMemo") {
       event.stopPropagation();
-      ctx.restoreSelection();
+      ctx.restoreSelection(false);
       ctx.insertMemoControl?.();
       ctx.updateToolbarState();
       return;
